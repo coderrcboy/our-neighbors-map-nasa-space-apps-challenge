@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Our Neighbor's Map — Interplanetary Survival Guide</title>
+<meta name="description" content="A layered, multi-mission map of all of Mars with a safety-first Marswalk (EVA) planner. NASA Space Apps Challenge 2026.">
+<link rel="stylesheet" href="lib/leaflet.css">
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='14' fill='%23c1440e'/><circle cx='11' cy='11' r='4' fill='%23ffb38a' opacity='.7'/></svg>">
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="brand"><div class="dot"></div><div><h1>Our Neighbor's Map</h1><small>Interplanetary Survival Guide · Martian Map</small></div></div>
+    <div class="hud">
+      <span>⌖ <b id="hudLL">—</b></span>
+      <span>⛰ <b id="hudEl">—</b></span>
+      <span>☀ <b id="hudLt">—</b></span>
+      <span>🔍 <b id="hudRes">—</b></span>
+      <span class="k" id="hudLs">—</span>
+      <span class="k" id="hudMtc">—</span>
+    </div>
+  </header>
+  <aside>
+    <div class="tabs">
+      <button data-tab="layers" class="on">Layers</button>
+      <button data-tab="plan">Plan EVA</button>
+      <button data-tab="cond">Conditions</button>
+      <button data-tab="explore">Explore</button>
+    </div>
+    <div class="pane on" id="p-layers"></div>
+    <div class="pane" id="p-plan"></div>
+    <div class="pane" id="p-cond"></div>
+    <div class="pane" id="p-explore"></div>
+  </aside>
+  <div id="mapwrap">
+    <div id="map"></div>
+    <div id="toast"></div>
+    <div id="modeHint"></div>
+    <div id="legend"><b>Slope hazard</b><br>
+      <span class="sw" style="background:#3ccf8e"></span>&lt; 8° easy walking<br>
+      <span class="sw" style="background:#f2b636"></span>8–15° suited limit<br>
+      <span class="sw" style="background:#ff4d4d"></span>15–25° rover only<br>
+      <span class="sw" style="background:#be1e8c"></span>&gt; 25° impassable</div>
+  </div>
+  <div id="profile"><canvas></canvas></div>
+</div>
+<script src="lib/leaflet.js"></script>
+<script src="data.js"></script>
+<script src="mars.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

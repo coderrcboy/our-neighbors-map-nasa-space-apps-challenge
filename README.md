@@ -34,8 +34,5 @@ NASA Mars Trek (JPL) · MGS MOLA & TES · Mars Odyssey THEMIS (ASU) · MRO CTX (
 - Elevation comes from 8-bit MOLA tiles calibrated against landing-site elevations (RMS ≈ 70 m, saturating above +7.6 km). Route slopes are at MOLA scale (~1.3 km), so boulder-scale hazards still need a look at HiRISE imagery.
 - The physiology, rover and radiation models are first-order planning aids, not flight-certified.
 
-## Tests
-`tests/run.py` drives the real app in headless Chrome against a synthetic Mars (analytic terrain, so every elevation and route can be checked against ground truth): 117 checks covering every layer, the planner, exports, edge cases (antimeridian, poles, offline) and the server. Run: `pip install playwright numpy pillow`, then `playwright install chromium`, then `python tests/run.py`.
-
 ## Files
-`index.html` is the page · `app.js` holds the map, planner and UI · `mars.js` is Mars24 time and sun · `data.js` is the layer registry, presets and gazetteer · `server.py` is the local server and live-data proxy · `lib/` is Leaflet 1.9.4
+`index.html` is the page (loads the Leaflet map library from a CDN, so no `lib` folder is needed) · `app.js` holds the map, planner and UI · `mars.js` is Mars24 time and sun · `data.js` is the layer registry, presets and gazetteer · `server.py` is an optional local server and live-data proxy

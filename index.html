@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Our Neighbor's Map — Interplanetary Survival Guide</title>
 <meta name="description" content="A layered, multi-mission map of all of Mars with a safety-first Marswalk (EVA) planner. NASA Space Apps Challenge 2026.">
-<link rel="stylesheet" href="lib/leaflet.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
 <link rel="stylesheet" href="style.css">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='14' fill='%23c1440e'/><circle cx='11' cy='11' r='4' fill='%23ffb38a' opacity='.7'/></svg>">
 </head>
@@ -46,7 +46,13 @@
   </div>
   <div id="profile"><canvas></canvas></div>
 </div>
-<script src="lib/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script>
+// Backup CDN if unpkg is unreachable
+if (!window.L) { document.write('<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"><script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"><\/script>'); }
+// Show any startup error on the page instead of a silent black screen
+window.addEventListener('error', e => { const d = document.createElement('div'); d.style.cssText = 'position:fixed;left:10px;bottom:10px;z-index:99999;background:#400;color:#fff;padding:8px 12px;border-radius:6px;font:12px monospace;max-width:80vw'; d.textContent = 'Error: ' + e.message + ' (' + (e.filename || '').split('/').pop() + ':' + e.lineno + ')'; document.body.appendChild(d); });
+</script>
 <script src="data.js"></script>
 <script src="mars.js"></script>
 <script src="app.js"></script>

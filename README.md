@@ -14,6 +14,22 @@ Option B is quick: double-click `index.html`. Everything works this way too (ver
 
 You need an internet connection because the map tiles stream from NASA, USGS and Caltech servers.
 
+## New in version 6
+- **Simple / Technical switch** (top left). Simple mode is the new beginner interface; Technical mode is the full version 5 interface. The choice is remembered; `?ui=simple` or `?ui=technical` in the link forces one.
+- **Simple mode:**
+  - A 3-step bar: Explore Mars → Plan a walk or drive → Is it safe?
+  - A "What do you want to do?" welcome card, including a one-click demo mission that plans a Jezero walk and plays it in 3D.
+  - Map layers in plain words: every layer has a one-line description, grouped by question, with a search box and an ⓘ that shows the science name and source.
+  - Planning as 3 steps, with a safety score and plain-English reasons.
+  - Labelled tools: Measure, 3D view, Weather and zoom.
+  - A plain-words readout under the mouse.
+  - A bottom tab bar on phones.
+- **New Water & ice layers** (both modes), high-value survey sites:
+  - *Old rivers & water-carved valleys*: Hynek et al. 2010 valley networks, NASA Trek tiles.
+  - *Buried ice*: fresh craters that dug up water ice (HiRISE, Dundas et al. 2014) plus 1,309 glacier-like forms (Souness et al. 2012), loaded live from NASA Trek's feature services. If Trek is down, the 22 icy impacts are built in.
+  - *Ancient ocean shoreline*: the northern plains below the proposed Deuteronilus ocean level (−3,760 m, Head et al. 1999), computed live from the MOLA elevation tiles.
+- Tutorial: Simple mode has its own 8-step tour; the Technical tour adds the mode switch (12 steps).
+
 ## New in version 5
 - **🧊 3D traverse view:** after computing a route, press **🧊 3D view** to walk or drive it in 3D. It has **First-person**, **Chase** and **Orbit** cameras, drag to look around, a height-exaggeration control, play/pause/scrub, and a live O₂/battery, slope, sun and radio HUD. Terrain is MOLA elevation draped with the 200 m HRSC/MOLA shaded relief. It uses Three.js from a CDN and needs no account or install.
 - **📡 Radio line-of-sight:** every route point is checked for a clear radio path to the habitat mast, over terrain and the curve of Mars. Blackout stretches glow purple on the map and the profile, and add a GO/NO-GO checklist item, a 📡 marker and a simulation alert. **Habitat radio mast height** is editable under ⚙ settings (default 10 m). A blackout longer than 15 min on foot is a NO-GO.
@@ -53,4 +69,4 @@ NASA Mars Trek (JPL) · MGS MOLA & TES · Mars Odyssey THEMIS (ASU) · MRO CTX (
 - The physiology, rover and radiation models are first-order planning aids, not flight-certified.
 
 ## Files
-`index.html` is the page (loads the Leaflet map library from a CDN, so no `lib` folder is needed) · `app.js` holds the map, planner and UI · `extras.js` holds the 3D view and the measure tool · `mars.js` is Mars24 time and sun · `data.js` is the layer registry, presets and gazetteer · `server.py` is an optional local server and live-data proxy
+`index.html` is the page (loads the Leaflet map library from a CDN, so no `lib` folder is needed) · `app.js` holds the map, planner and UI · `extras.js` holds the 3D view and the measure tool · `simple.js` holds Simple mode · `mars.js` is Mars24 time and sun · `data.js` is the layer registry, presets and gazetteer · `server.py` is an optional local server and live-data proxy

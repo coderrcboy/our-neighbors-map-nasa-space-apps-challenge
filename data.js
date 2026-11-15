@@ -28,7 +28,11 @@ const BASEMAPS = [
 ];
 
 // ---------- Overlays (stackable) ----------
+const TREK_ARC = 'https://trek.nasa.gov/mars/trekarcgis/rest/services/';
 const OVERLAYS = [
+  { group:'Water & ice', id:'valleys', name:'Valley networks (Hynek et al. 2010)', desc:'Ancient river valleys mapped from THEMIS + MOLA · NASA Trek', url:TREK_ARC+'Hynek_Valley_Networks/MapServer/WMTS/tile/1.0.0/Hynek_Valley_Networks/default/default028mm/{z}/{y}/{x}.png', maxNative:9, op:.95, attr:ATTR.trek+' · Hynek et al. 2010' },
+  { group:'Water & ice', id:'ice', name:'Ice evidence (icy impacts + glacier-like forms)', desc:'Fresh craters that exposed water ice (Dundas et al. 2014) + glacier-like forms (Souness et al. 2012) · live from NASA Trek', computed:'ice', op:1 },
+  { group:'Water & ice', id:'ocean', name:'Proposed ancient ocean (Deuteronilus level)', desc:'Northern plains below −3,760 m MOLA (Contact 2, Head et al. 1999) · computed from the DEM', computed:'ocean', op:.8 },
   { group:'Imagery', id:'hirise', name:'HiRISE global', desc:'~25–50 cm/px strips (sparse) · zoom 12+', url:arcgis('HiRISE'), arc:true, maxNative:18, op:1, attr:ATTR.hirise },
   { group:'Imagery', id:'jez_h', name:'Jezero HiRISE 25 cm', desc:'Perseverance site, controlled', url:trek('JEZ_hirise_soc_006_orthoMosaic_25cm_Eqc_latTs0_lon0_first_dd','png'), maxNative:17, bounds:[[18.3068,77.2229],[18.6693,77.5840]], op:1, attr:ATTR.hirise },
   { group:'Imagery', id:'gale_h', name:'Gale / Curiosity HiRISE', desc:'Mount Sharp traverse area', url:trek('curiosity_hirise_mosaic','png'), maxNative:16, bounds:[[-4.9255,137.1225],[-4.2490,137.7298]], op:1, attr:ATTR.hirise },
@@ -132,3 +136,43 @@ const REMS_SNAPSHOT = { sol:'4995', terrestrial_date:'2026-08-25', ls:'341', min
 // craters, scarps and canyon walls show up. zf = vertical exaggeration used when the shading was made
 // (calibrated so flat plains read < 2° and canyon walls ~25-30°).
 const SHADE = { url: (z, y, x) => `${TREK}Mars_MOLA_blend200ppx_HRSC_Shade_clon0dd_200mpp_lzw/1.0.0/default/default028mm/${z}/${y}/${x}.jpg`, maxZ: 8, alt: 45, zf: 2 };
+
+// ---------- Fallback for the ice layer if NASA Trek's feature service is unreachable ----------
+// Fresh impacts that exposed water ice, imaged by HiRISE (Dundas et al. 2014, JGR), [lat, lon east].
+const ICY_IMPACTS = [[46.33,176.9],[43.29,164.22],[55.56,150.61],[45.05,164.71],[46.17,-171.51],[50.65,-81.57],[44.21,164.21],[44.34,152.92],[63.91,44.89],[53.26,46.25],[50.5,-94.81],[64.3,-128.5],[60.98,-121.28],[43.9,-155.7],[50.8,-151.2],[50.4,-140.3],[52.2,-145.2],[39.1,-169.8],[-71.5,-168.5],[-73.7,-109.4],[68.53,-1.47],[52.95,50.86]];
+const OCEAN_LEVEL = -3760;   // m, Deuteronilus / Contact 2 mean elevation (Head et al. 1999, Science 286)
+
+// ---------- Simple mode: every layer in plain words  [group, plain name, what it shows] ----------
+const SIMPLE_GROUPS = ['Water & ice', 'What it looks like', 'Is it safe to walk?', 'Rocks & minerals', 'Dust & temperature', 'Close-ups of landing sites', 'Names, rovers & grid'];
+const SIMPLE_INFO = {
+  valleys: ['Water & ice', 'Old rivers & water-carved valleys', 'Valleys cut by flowing water billions of years ago. Good places to look for signs of past life.'],
+  ice:     ['Water & ice', 'Buried ice', 'Spots where new craters dug up water ice, plus ice-filled glaciers. Astronauts could mine it for drinking water and rocket fuel.'],
+  ocean:   ['Water & ice', 'Ancient ocean shoreline', 'Possible ocean that may have filled the low northern plains about 3.5 billion years ago (blue area, edge = old shoreline).'],
+  smart:   ['What it looks like', 'Real photos, sharpest available', 'Switches to clearer pictures as you zoom in, down to car-sized detail.'],
+  viking:  ['What it looks like', 'Colour photo of the whole planet', 'Mars in natural-looking colour, from the 1970s Viking orbiters.'],
+  molahrsc:['What it looks like', 'Height map (detailed)', 'Colours show height: blue = low, red/white = high. Shading shows hills and craters.'],
+  mola:    ['What it looks like', 'Height map', 'Colours show height: blue = low, red/white = high.'],
+  ctx:     ['What it looks like', 'Black-and-white photos (5 m)', 'Very sharp greyscale photos covering almost all of Mars.'],
+  moc:     ['What it looks like', 'Old black-and-white atlas', 'A 1990s whole-planet photo map.'],
+  slope:   ['Is it safe to walk?', 'Too steep to walk', 'Green = easy, yellow = careful, red = too steep for a spacesuit, purple = impassable.'],
+  themisN: ['Is it safe to walk?', 'Soft sand vs solid rock', 'Night-time heat photo: dark = loose dust you can sink in, bright = firm rock.'],
+  rough:   ['Is it safe to walk?', 'Bumpy ground', 'How rough the surface is over a kilometre, which matters for rovers.'],
+  ti:      ['Is it safe to walk?', 'Firm or soft ground (whole planet)', 'Bright = rocky and firm, dark = fine dust.'],
+  geo:     ['Rocks & minerals', 'Rock types and ages', 'A geology map: each colour is a different kind and age of rock.'],
+  pyx:     ['Rocks & minerals', 'Volcanic minerals', 'Where lava-type minerals (pyroxene) are common.'],
+  clay:    ['Rocks & minerals', 'Clays and glass', 'Clay forms in water, so these spots hint at a wetter past.'],
+  alb:     ['Rocks & minerals', 'Bright vs dark ground', 'How much sunlight the surface reflects.'],
+  dust:    ['Dust & temperature', 'Dusty areas', 'Where a layer of fine dust covers the ground.'],
+  themisD: ['Dust & temperature', 'Daytime heat photo', 'Infrared photo that shows the shape of the land very clearly.'],
+  hirise:  ['Close-ups of landing sites', 'Super-close photos (25 cm)', 'Strips so sharp you can see rocks and rover tracks. Zoom in a lot to see them.'],
+  jez_h:   ['Close-ups of landing sites', 'Jezero crater close-up', 'Where the Perseverance rover is exploring an old river delta.'],
+  jez_c:   ['Close-ups of landing sites', 'Jezero crater (wide)', 'The whole Jezero crater lake bed.'],
+  gale_h:  ['Close-ups of landing sites', 'Gale crater close-up', 'Where the Curiosity rover is climbing Mount Sharp.'],
+  gale_c:  ['Close-ups of landing sites', 'Gale crater (wide)', 'The whole Gale crater and Mount Sharp.'],
+  olym:    ['Close-ups of landing sites', 'Olympus Mons summit', 'The top of the tallest volcano in the solar system.'],
+  opp:     ['Close-ups of landing sites', 'Opportunity rover site', 'Meridiani Planum, where Opportunity drove 45 km.'],
+  spirit:  ['Close-ups of landing sites', 'Spirit rover site', 'Gusev crater and the Columbia Hills.'],
+  names:   ['Names, rovers & grid', 'Place names', 'Official names of craters, mountains and valleys.'],
+  sites:   ['Names, rovers & grid', 'Landers & rovers', 'Every NASA mission that landed safely.'],
+  grid:    ['Names, rovers & grid', 'Map grid', 'Latitude and longitude lines.'],
+};

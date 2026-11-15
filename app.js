@@ -176,6 +176,51 @@ const SlopeLayer = L.GridLayer.extend({
     return cv;
   }
 });
+// Proposed ancient ocean: everything in the northern lowlands below the Deuteronilus contact level (Head et al. 1999)
+const OceanLayer = L.GridLayer.extend({
+  options: { tileSize: 256, noWrap: true, bounds: WORLD, minZoom: 1, maxZoom: 19, opacity: .8, updateWhenZooming: false, keepBuffer: 3 },
+  createTile(c, done) {
+    const cv = document.createElement('canvas'); cv.width = cv.height = 256;
+    const span = 180 / 2 ** c.z, w = -180 + c.x * span, n = 90 - c.y * span, s = n - span, e = w + span;
+    if (s >= 90 || n <= -2) { setTimeout(() => done(null, cv)); return cv; }            // northern lowlands only
+    const z = clamp(c.z + 1, 1, DEM.maxZ), N = 64, cell = span / N;
+    dem.ensure(z, s, w, n, e).then(() => {
+      const below = new Uint8Array((N + 2) * (N + 2));
+      for (let j = -1; j <= N; j++) for (let i = -1; i <= N; i++) {
+        const lat = n - (j + .5) * cell, lon = w + (i + .5) * cell, h = elev(lat, lon, z);
+        below[(j + 1) * (N + 2) + i + 1] = lat > 0 && h < OCEAN_LEVEL ? 1 : 0;
+      }
+      const g = cv.getContext('2d'), img = g.createImageData(N, N);
+      for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+        const k = (j + 1) * (N + 2) + i + 1; if (!below[k]) continue;
+        const edge = !below[k - 1] || !below[k + 1] || !below[k - N - 2] || !below[k + N + 2];
+        img.data.set(edge ? [150, 220, 255, 255] : [40, 120, 230, 120], (j * N + i) * 4);
+      }
+      const tmp = document.createElement('canvas'); tmp.width = tmp.height = N; tmp.getContext('2d').putImageData(img, 0, 0);
+      g.imageSmoothingEnabled = c.z > 4; g.drawImage(tmp, 0, 0, 256, 256);
+      done(null, cv);
+    }).catch(() => done(null, cv));
+    return cv;
+  }
+});
+// Ice evidence: live from NASA Trek's feature services, with a built-in fallback list of icy impacts
+function iceLayer() {
+  const g = L.layerGroup(); let loaded = false;
+  const dot = (lat, lon, o, tip) => g.addLayer(L.circleMarker([lat, lon], o).bindTooltip(tip));
+  const icy = (pts, live) => pts.forEach(([la, lo]) => dot(la, lo, { radius: 7, color: '#ffffff', weight: 2, fillColor: '#5bd1ff', fillOpacity: 1 }, `🧊 New crater dug up water ice (HiRISE)${live ? '' : ' · built-in list'}<br><small>Dundas et al. 2014 · ${fmtLL(la, lo)}</small>`));
+  async function load() {
+    if (loaded) return; loaded = true;
+    const q = async (svc, id, where) => { const r = await fetch(`${TREK_ARC}${svc}/MapServer/${id}/query?where=${encodeURIComponent(where)}&outFields=*&returnGeometry=true&f=json`); if (!r.ok) throw new Error(r.status); const j = await r.json(); if (j.error) throw new Error(j.error.message); return (j.features || []).filter(f => f.geometry).map(f => [f.geometry.y, f.geometry.x, f.attributes]); };
+    try {
+      const [ice, glf1, glf2] = await Promise.all([q('RSLs_Gullies_New_IcyCraters_clon0', 0, "Short_Type='icy impact site'"), q('Mars_Fans_Glaciers_Gullies', 1, 'FID<1000'), q('Mars_Fans_Glaciers_Gullies', 1, 'FID>=1000')]);
+      [...glf1, ...glf2].forEach(([la, lo]) => dot(la, lo, { radius: 3, color: '#cfefff', weight: 1, fillColor: '#8fd8ff', fillOpacity: .85 }, `Glacier-like form: an ice-rich glacier under rock debris<br><small>Souness et al. 2012 · ${fmtLL(la, lo)}</small>`));
+      icy(ice.length ? ice.map(p => [p[0], p[1]]) : ICY_IMPACTS, !!ice.length);
+      g.featureCount = ice.length + glf1.length + glf2.length;
+    } catch (e) { icy(ICY_IMPACTS, false); g.featureCount = ICY_IMPACTS.length; toast('Ice map: NASA Trek feature service unreachable — showing the built-in list of icy impacts only.', 5000); }
+  }
+  g.on('add', load);
+  return g;
+}
 function namesLayer() {
   const g = L.layerGroup();
   for (const [n, t, lat, lon] of GAZ) {
@@ -210,6 +255,8 @@ for (const o of OVERLAYS) {
   else if (o.computed === 'names') overlayLayers[o.id] = namesLayer();
   else if (o.computed === 'sites') overlayLayers[o.id] = sitesLayer();
   else if (o.computed === 'grid') overlayLayers[o.id] = gridLayer();
+  else if (o.computed === 'ice') overlayLayers[o.id] = iceLayer();
+  else if (o.computed === 'ocean') overlayLayers[o.id] = new OceanLayer({ opacity: o.op });
   else overlayLayers[o.id] = makeTileLayer(o, o.group === 'Imagery' ? { opacity: o.op, pane: 'basePane', zIndex: 10 } : { opacity: o.op });
 }
 
@@ -223,7 +270,7 @@ function buildLayersPane() {
   h += `<div class="lyr"><input type="checkbox" id="o_tint" checked><label for="o_tint">Keep Mars colours when zoomed in<small>Gives the greyscale CTX / HiRISE camera images a natural Mars colour. Untick to see the raw science greyscale.</small></label><span></span></div></div>`;
   let grp = null;
   for (const o of OVERLAYS) {
-    if (o.group !== grp) { if (grp) h += `</div>`; grp = o.group; h += `<h3>${grp} layers</h3><div class="card">`; }
+    if (o.group !== grp) { if (grp) h += `</div>`; grp = o.group; h += `<h3>${grp} layers${grp === 'Water & ice' ? ' <span class="newtag">NEW</span>' : ''}</h3><div class="card">`; }
     const op = o.computed && o.computed !== 'slope' ? '<span></span>' : `<input type="range" min="0" max="1" step="0.05" value="${o.op}" data-op="${o.id}" title="Opacity">`;
     h += `<div class="lyr"><input type="checkbox" id="o_${o.id}" data-ov="${o.id}" ${o.on ? 'checked' : ''}><label for="o_${o.id}">${o.name}${badge(o.tags)}<small>${o.desc}</small></label>${op}</div>`;
   }
@@ -264,13 +311,15 @@ const Planner = (() => {
       lay.addLayer(m);
     });
   }
-  function clearRoute() { Sim.stop(); routeLay.clearLayers(); st.route = null; $('#profile').classList.remove('on'); document.body.classList.remove('profile-on'); $('#telemetry').innerHTML = ''; }
+  function clearRoute() { Sim.stop(); routeLay.clearLayers(); st.route = null; $('#profile').classList.remove('on'); document.body.classList.remove('profile-on'); $('#telemetry').innerHTML = ''; planChanged(); }
+  const planChanged = () => document.dispatchEvent(new CustomEvent('onm:plan'));
   function setClick(mode) {
     st.click = st.click === mode ? null : mode;
     $('#btnHab').classList.toggle('on', st.click === 'hab'); $('#btnWp').classList.toggle('on', st.click === 'wp');
     $('#modeHint').style.display = st.click ? 'block' : 'none';
     $('#modeHint').textContent = st.click === 'hab' ? 'Click the map to place the habitat' : st.click === 'wp' ? 'Click the map to add science waypoints (Esc to stop)' : '';
     map.getContainer().style.cursor = st.click ? 'crosshair' : '';
+    planChanged();
   }
   map.on('click', e => {
     if (typeof Measure !== 'undefined' && Measure.active) return;
@@ -297,6 +346,7 @@ const Planner = (() => {
     });
     $$('[data-del]').forEach(b => b.onclick = () => { st.wps.splice(+b.dataset.del, 1); clearRoute(); renderList(); redrawMarkers(); });
     $('#maxSlope').textContent = P.maxSlope + '°';
+    planChanged();
   }
 
   // ---- A* over a DEM-derived cost grid ----
@@ -449,7 +499,7 @@ const Planner = (() => {
       if (token !== st.token) return;     // a newer plan was started meanwhile
       st.route = { S, legs, t, totalS, dwellS, E: evaE, o2, roverEvaO2, kwh, asc, desc, maxSl, loose, subgrid, relaxed, start, s0, s1, minEl, dose, radRate, far, farIdx, hMean, T0, arrive, mode: st.mode, radio, mast: P.mast };
       drawRoute(); renderTelemetry(); Profile.draw(st.route);
-      saveHash();
+      saveHash(); planChanged();
     } finally { $('#btnPlan').disabled = false; $('#btnPlan').textContent = 'Compute safe route'; }
   }
 
@@ -667,7 +717,11 @@ const Planner = (() => {
   }
   function addWp(lat, lon, n) { st.wps.push({ n: n || `Waypoint ${st.wps.length + 1}`, lat, lon, task: 'Sample collection', dwell: 30 }); switchTab('plan'); clearRoute(); renderList(); redrawMarkers(); if (!st.hab) toast('Waypoint added — now place a habitat'); }
   function startAt(lat, lon, n) { habAt(lat, lon, 'Habitat · ' + n); if (st.click !== 'wp') setClick('wp'); toast('✓ Habitat placed. Now click the map to add science stops, then press <b>Compute safe route</b>.', 6000); }
-  return { init, habAt, addWp, startAt, loadPreset, loadHash, compute, get state() { return st; }, setHover(p) { if (!p) { hoverMk && map.removeLayer(hoverMk); hoverMk = null; return; } if (!hoverMk) hoverMk = L.circleMarker([p.lat, p.lon], { radius: 7, color: '#fff', weight: 2, fillColor: '#e0603a', fillOpacity: 1 }).addTo(map); else hoverMk.setLatLng([p.lat, p.lon]); } };
+  function setMode(m) { if (m === st.mode) return; st.mode = m; $('#mode').value = m; clearRoute(); renderList(); renderSettings(); }
+  function setReturn(b) { st.returnHome = !!b; $('#retHome').checked = st.returnHome; clearRoute(); }
+  function removeWp(i) { st.wps.splice(i, 1); clearRoute(); renderList(); redrawMarkers(); }
+  function clearAll() { st.hab = null; st.wps = []; clearRoute(); renderList(); redrawMarkers(); history.replaceState(null, '', location.pathname + location.search); }
+  return { init, habAt, addWp, startAt, loadPreset, loadHash, compute, setClick, setMode, setReturn, removeWp, clearAll, get state() { return st; }, setHover(p) { if (!p) { hoverMk && map.removeLayer(hoverMk); hoverMk = null; return; } if (!hoverMk) hoverMk = L.circleMarker([p.lat, p.lon], { radius: 7, color: '#fff', weight: 2, fillColor: '#e0603a', fillOpacity: 1 }).addTo(map); else hoverMk.setLatLng([p.lat, p.lon]); } };
 })();
 
 // ---------------------------------------------------------------------
@@ -1015,8 +1069,9 @@ const Sim = (() => {
 //  Guided tour (first visit, or the ? button)
 // ---------------------------------------------------------------------
 const Tour = (() => {
-  const steps = [
+  const TECH_STEPS = [
     { sel: null, t: 'Welcome to Our Neighbor\'s Map', b: 'A mission planner for the first astronauts on Mars. It combines NASA, ESA, USGS and Caltech data so you can plan a safe Marswalk anywhere on the planet. This short tour shows you how.' },
+    { sel: '#uiMode', t: 'Simple or Technical', b: 'You are in <b>Technical</b> mode: every layer, number and setting. Switch to <b>Simple</b> for plain words and step-by-step planning.' },
     { sel: '.searchbox', t: '1 · Search for a base', b: 'Type a place — try <b>Jezero</b>, <b>Gale</b> or <b>Olympus Mons</b> — or coordinates like <b>18.4N 77.5E</b>. You can also just click anywhere on the map.' },
     { sel: '#leftPanel', t: '2 · Read about it, then press Start', b: 'A card describes the place: what it is, elevation, ground type and daylight. Press <b>▶ Start mission here</b> to put your habitat there.' },
     { sel: '#rightPanel', t: '3 · Add stops & compute', b: 'After Start, click the map to add science stops, then press <b>Compute safe route</b>. In a hurry? Use one of the one-click <b>Preset missions</b>.', tab: 'plan' },
@@ -1028,7 +1083,7 @@ const Tour = (() => {
     { sel: '.tabs', t: '9 · More modes', b: '<b>Layers</b>: switch maps and turn on the slope-hazard layer. <b>Conditions</b>: Mars clock, live weather, solar storms. <b>Explore</b>: every landing site and data-source status.' },
     { sel: '#btnTour', t: 'That\'s it!', b: 'Press <b>?</b> anytime to see this tour again. Good luck, explorer.' },
   ];
-  let k = 0;
+  let k = 0, steps = TECH_STEPS;
   function show() {
     const s = steps[k], el = s.sel && $(s.sel), T = $('#tour');
     if (s.tab) switchTab(s.tab);
@@ -1046,7 +1101,7 @@ const Tour = (() => {
     if ($('#tBack')) $('#tBack').onclick = () => { k--; show(); };
   }
   function end() { $('#tour').style.display = 'none'; try { localStorage.setItem('onm_tour_seen', '1'); } catch (e) {} switchTab('plan'); $('#q').focus(); }
-  function start() { k = 0; show(); }
+  function start() { steps = document.body.classList.contains('ui-simple') && typeof SIMPLE_TOUR !== 'undefined' ? SIMPLE_TOUR : TECH_STEPS; k = 0; show(); }
   function maybeAuto() { let seen = false; try { seen = localStorage.getItem('onm_tour_seen'); } catch (e) {} if (!seen && !navigator.webdriver && !location.hash) setTimeout(start, 900); }
   return { start, maybeAuto };
 })();
@@ -1054,7 +1109,7 @@ const Tour = (() => {
 // ---------------------------------------------------------------------
 //  HUD (cursor readout) + tabs + boot
 // ---------------------------------------------------------------------
-function switchTab(id) { $('#rightPanel').classList.remove('collapsed'); $$('.tabs button[data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === id)); $$('.pane').forEach(p => p.classList.toggle('on', p.id === 'p-' + id)); }
+function switchTab(id) { $('#rightPanel').classList.remove('collapsed'); $$('.tabs button[data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === id)); const simple = document.body.classList.contains('ui-simple'), pid = 'p-' + (simple && (id === 'layers' || id === 'plan') ? 's' + id : id); $$('.pane').forEach(p => p.classList.toggle('on', p.id === pid)); document.dispatchEvent(new CustomEvent('onm:tab', { detail: id })); }
 let hudT = 0;
 let hudPos = null;
 function hudUpdate() {

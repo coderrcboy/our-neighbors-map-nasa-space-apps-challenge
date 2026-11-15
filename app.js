@@ -31,8 +31,8 @@ class Raster {
     if (this.cache.has(k)) return this.cache.get(k);
     const p = (async () => {
       try {
-        // give up after 15 s so one stalled download can't freeze route planning; the failed tile is dropped from the cache and retried next time
-        const ac = new AbortController(), to = setTimeout(() => ac.abort(), 15000);
+        // give up after 10 s so one stalled download can't freeze route planning; the failed tile is dropped from the cache and retried next time
+        const ac = new AbortController(), to = setTimeout(() => ac.abort(), 10000);
         let r; try { r = await fetch(this.urlFn(z, y, x), { mode: 'cors', signal: ac.signal }); } finally { clearTimeout(to); }
         if (!r.ok) return null;
         const bmp = await createImageBitmap(await r.blob());
@@ -467,7 +467,7 @@ const Planner = (() => {
         let s0 = 90, n0 = -90, w0 = 540, e0 = -540; S.forEach(q => { s0 = Math.min(s0, q.lat); n0 = Math.max(n0, q.lat); w0 = Math.min(w0, q.lon); e0 = Math.max(e0, q.lon); });
         const zR = Math.max(5, SHADE.maxZ - Math.max(0, Math.ceil(Math.log2(Math.max(n0 - s0, (e0 - w0) / 2) / 2))));
         await shade.ensure(zR, s0 - .05, w0 - .05, n0 + .05, e0 + .05).catch(() => {});
-        S.forEach(q => { q.fine = shadeSlope(q.lat, q.lon, zR); if (q.fine > q.slope) { q.slope = q.fine; q.steepFine = true; } });
+        S.forEach(q => { q.fine = shadeSlope(q.lat, q.lon, zR); q.noShade = isNaN(shade.val(zR, q.lat, q.lon)); if (q.fine > q.slope) { q.slope = q.fine; q.steepFine = true; } });
       }
       // time, energy
       const start = st.start || MarsTime.nextLTST(new Date(), st.hab.lon, 9);
@@ -571,7 +571,8 @@ const Planner = (() => {
     if (r.subgrid) add('warn', `Some legs are shorter than the 200 m terrain grid — inspect HiRISE/CTX imagery for boulders`);
     if (r.S.some(p => p.sat)) add('warn', `Terrain above +7.6 km: DEM saturates, slopes there are under-estimated`);
     if (r.loose > 0) add('warn', `${fmt(r.loose / 1000, 2)} km over low thermal-inertia ground (likely loose dust/sand — dashed)`);
-    else if (r.S.filter(p => p.noTI).length > r.S.length / 2) add('warn', 'No ground-firmness data for most of the route (THEMIS covers ±65° only): soft sand cannot be ruled out');
+    else if (r.S.filter(p => p.noTI).length > r.S.length / 2) add('warn', r.S.some(p => p.noTI && Math.abs(p.lat) <= 65) ? 'Ground-firmness (thermal) data did not load for most of the route: soft sand cannot be ruled out. Check your connection and recompute' : 'No ground-firmness data for most of the route (THEMIS covers ±65° only): soft sand cannot be ruled out');
+    if (r.S.filter(p => p.noShade).length > r.S.length / 2) add('warn', 'Detailed terrain shading (200 m) did not load for most of the route: small craters and scarps may be missed. Check your connection and recompute');
     else add('ok', 'No loose-dust signature on route (THEMIS night IR)');
     // consumables
     if (st.mode === 'eva') {
@@ -635,7 +636,7 @@ const Planner = (() => {
     <h3>Safety checklist</h3><ul class="checks">${checks.map(([l, m]) => `<li class="${l}">${m}</li>`).join('')}</ul>
     <h3>Science objectives</h3><ul class="checks">${st.wps.map((w, i) => `<li class="ok"><b>${i + 1}. ${esc(w.n)}</b> — ${esc(w.task)} (${w.dwell} min)${sciNote(w)}</li>`).join('')}</ul>
     <div class="row" style="margin-top:10px"><button class="btn sm" id="btnGeo">Download GeoJSON</button><button class="btn sm" id="btnBrief">Mission brief</button><button class="btn sm" id="btnLink">Copy link</button></div>
-    <p class="note">Models: walking speed — Tobler hiking function ×0.6 suited penalty; metabolic cost — Pandolf (1977) load-carriage equation with weight terms scaled to 0.38 g; O₂ — 20.1 kJ per litre; radio — line-of-sight from habitat mast to crew antenna over MOLA terrain with Mars curvature; terrain — MOLA DEM (463 m) for elevation + HRSC/MOLA 200 m shaded relief for local steepness (craters, scarps) + THEMIS night-IR thermal inertia; sun — Mars24 (Allison &amp; McEwen 2000); radiation — MSL/RAD surface baseline (Hassler et al. 2014). Planning aid, not flight-certified.</p>`;
+    <p class="note">Models: walking speed — Tobler hiking function ×0.6 suited penalty; metabolic cost — Pandolf (1977) load-carriage equation with weight terms scaled to 0.38 g; O₂ — 20.1 kJ per litre; radio — line-of-sight from habitat mast to crew antenna over MOLA terrain with Mars curvature; terrain — MOLA elevation tiles (~1.3 km per pixel as served) for elevation + HRSC/MOLA 200 m shaded relief for local steepness (craters, scarps) + THEMIS night-IR thermal inertia; sun — Mars24 (Allison &amp; McEwen 2000); radiation — MSL/RAD surface baseline (Hassler et al. 2014). Planning aid, not flight-certified.</p>`;
     $('#telemetry').innerHTML = h;
     $('#btnSim').onclick = () => Sim.start(st.route, PROFILES[st.mode], st.hab);
     $('#btn3D').onclick = () => View3D.open(st.route, PROFILES[st.mode], st.hab, st.wps);
@@ -779,7 +780,7 @@ function survivability(r, P, mode) {
   add('Slopes over the limit', Math.exp(-badL / 1500), badL > 0 ? `${fmt(badL / 1000, 2)} km steeper than ${P.maxSlope}° (each 1.5 km cuts the chance to about a third). Use Reroute.` : `No section steeper than ${P.maxSlope}°.`);
   add('Steep but allowed ground', Math.exp(-steepL / (mode === 'eva' ? 30000 : 60000)), `${fmt(steepL / 1000, 2)} km between ${fmt(P.maxSlope / 2)}° and ${P.maxSlope}° (fall / tip-over risk).`);
   const noTI = S.filter(p => p.noTI).length / S.length;          // share of the route with no thermal (sand) data
-  add('Loose sand / dust', Math.exp(-r.loose / 25000) * (1 - 0.1 * noTI), noTI > 0.05 ? `${fmt(r.loose / 1000, 2)} km of known loose ground; no ground-firmness data for ${fmt(noTI * 100)}% of the route (THEMIS covers ±65° only), so it counts as unknown, not safe.` : `${fmt(r.loose / 1000, 2)} km over low thermal-inertia ground (THEMIS night IR).`);
+  add('Loose sand / dust', Math.exp(-r.loose / 25000) * (1 - 0.1 * noTI), noTI > 0.05 ? `${fmt(r.loose / 1000, 2)} km of known loose ground; no ground-firmness data for ${fmt(noTI * 100)}% of the route (THEMIS covers ±65° only), so it counts as unknown, not safe.`.replace('(THEMIS covers ±65° only)', S.some(p => p.noTI && Math.abs(p.lat) <= 65) ? '(thermal data did not load or has a gap here)' : '(THEMIS covers ±65° only)') : `${fmt(r.loose / 1000, 2)} km over low thermal-inertia ground (THEMIS night IR).`);
   const dk = mode === 'eva' ? 1 : 0.5;   // a pressurized rover has lights and heating: half the penalty
   add('Daylight', 1 - dk * (r.s0.el < 0 ? 0.3 : r.minEl < 0 ? 0.4 : r.minEl < 5 ? 0.15 : 0), r.s0.el < 0 ? 'Departs before sunrise.' : r.minEl < 0 ? 'Sun sets before the crew is back.' : r.minEl < 5 ? `Sun drops to ${fmt(r.minEl)}° (dusk).` : `Sun stays above ${fmt(r.minEl)}° (Mars24).`);
   const lm = r.radio ? r.radio.longest / 60 : 0;
@@ -787,6 +788,8 @@ function survivability(r, P, mode) {
   add('Dust-storm season', MarsTime.dustSeason(r.T0.Ls) ? 0.97 : 1, `Ls ${fmt(r.T0.Ls)}°${MarsTime.dustSeason(r.T0.Ls) ? ': inside the main storm season' : ': outside the main storm season'}.`);
   add('Radiation', Math.exp(-r.dose / 100), `${fmt(r.dose, 3)} mSv for this sortie (MSL/RAD surface baseline, quiet sun).`);
   const satF = S.filter(p => p.sat).length / S.length;           // share of the route above the elevation-data ceiling (slopes unknown there)
+  const shF = S.filter(p => p.noShade).length / S.length;        // share of the route where the 200 m shading did not load
+  if (shF > 0.05) add('Detailed terrain data', 1 - 0.3 * shF, `The 200 m terrain shading did not load for ${fmt(shF * 100)}% of the route, so small craters and scarps there may be missed (counted as unknown, not safe).`);
   if (r.relaxed || satF > 0) add('Terrain data confidence', (r.relaxed ? 0.9 : 1) * (1 - 0.3 * satF), [r.relaxed ? 'No path existed under the slope limit, so it was relaxed.' : '', satF > 0 ? `${fmt(satF * 100)}% of the route is above +7.6 km, where the elevation data tops out and slopes can't be measured (counted as unknown, not flat).` : ''].filter(Boolean).join(' '));
   F.sort((a, b) => a.p - b.p);
   return { pct: Math.round(100 * F.reduce((a, f) => a * f.p, 1)), factors: F };
@@ -944,6 +947,7 @@ const Conditions = (() => {
     const j = await getJSON('https://mars.nasa.gov/rss/api/?feed=weather&category=msl&feedtype=json', 'api/rems', 'rems');
     const live = !!(j && j.soles); const w = live ? j.soles.find(s => s.max_temp !== '--') || j.soles[0] : REMS_SNAPSHOT;
     const age = (Date.now() - Date.parse(w.terrestrial_date + 'T12:00:00Z')) / 864e5;   // days since NASA's latest report
+    if ($('#remsAge')) $('#remsAge').textContent = `(NASA's latest report: ${w.terrestrial_date}${age > 3 ? ', ' + fmt(age) + ' days ago' : ''})`;
     $('#rems').innerHTML = `<div class="kv">
       <span>Sol / Earth date</span><span>${w.sol} · ${w.terrestrial_date}</span>
       <span>Air temp min / max</span><span>${w.min_temp} / ${w.max_temp} °C</span>
@@ -970,7 +974,7 @@ const Conditions = (() => {
   function init() {
     $('#p-cond').innerHTML = `<h3>Mars right now</h3><div class="card" id="clock"></div>
       <h3>Selected point <span class="muted" style="text-transform:none;letter-spacing:0">(click the map)</span></h3><div class="card" id="ptInfo"></div>
-      <h3>Surface weather · Gale crater</h3><div class="card" id="rems">Loading…</div>
+      <h3>Surface weather · Gale crater <span class="muted" id="remsAge" style="text-transform:none;letter-spacing:0"></span></h3><div class="card" id="rems">Loading…</div>
       <h3>Space weather</h3><div class="card" id="swx">Loading…</div>
       <h3>Latest from the surface</h3><div class="card" id="raw">Loading…</div>`;
     clock(); setInterval(clock, 1000); setInterval(renderPoint, 30000);
@@ -995,7 +999,8 @@ function initExplore() {
     if (m) m = [m[0], m[1], m[2], m[4], m[5]];
     let note = '';
     if (m) {
-      let la = +m[1], lo = +m[3]; if (/s/i.test(m[2] || '')) la = -la; if (/w/i.test(m[4] || '')) lo = -lo;
+      // a hemisphere letter decides the sign ("-0.5S" and "0.5S" both mean south); without a letter the number's own sign counts
+      let la = m[2] ? Math.abs(+m[1]) * (/s/i.test(m[2]) ? -1 : 1) : +m[1], lo = m[4] ? Math.abs(+m[3]) * (/w/i.test(m[4]) ? -1 : 1) : +m[3];
       lo = ((lo + 180) % 360 + 360) % 360 - 180;                    // any longitude → −180…180 (e.g. 200W = 160E)
       if (Math.abs(la) <= 90 && Number.isFinite(lo)) out.push([`Go to ${fmtLL(la, lo)}`, '', la, lo]);
       else note = 'Latitude must be between 90°S and 90°N.';

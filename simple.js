@@ -38,9 +38,18 @@ const UI = (() => {
   const stepBar = el('nav', { id: 'stepBar', className: 'float' }, `
     <button data-step="1"><span>1</span>Explore Mars</button>
     <button data-step="2"><span>2</span>Plan a walk or drive</button>
-    <button data-step="3"><span>3</span>Is it safe?</button>`);
+    <button data-step="3"><span>3</span>Is it safe?</button>
+    <button class="stepHide" id="stepHide" aria-label="Hide the steps bar" title="Hide">‹</button>`);
   stepBar.setAttribute('aria-label', 'Main steps');
   app.appendChild(stepBar);
+  // phones: the step bar slides away like a sidebar; a small tab brings it back (choice remembered)
+  const stepShow = el('button', { id: 'stepShow', className: 'float', title: 'Show steps' }, '<span>1·2·3</span> Steps ›');
+  stepShow.setAttribute('aria-label', 'Show the steps bar');
+  app.appendChild(stepShow);
+  const setStepsHidden = h => { document.body.classList.toggle('steps-hidden', h); try { h ? localStorage.setItem('onm_steps_hidden', '1') : localStorage.removeItem('onm_steps_hidden'); } catch (e) {} };
+  try { if (localStorage.getItem('onm_steps_hidden') === '1') document.body.classList.add('steps-hidden'); } catch (e) {}
+  $('#stepHide').onclick = () => setStepsHidden(true);
+  stepShow.onclick = () => setStepsHidden(false);
   // welcome card
   const welcome = el('div', { id: 'welcome' }, `
     <div class="wtop"><div><div class="kick">NEW HERE?</div><div class="wt">What do you want to do?</div></div><button class="x" id="wClose" aria-label="Close">✕</button></div>
@@ -98,9 +107,9 @@ const UI = (() => {
   // ---------------- step bar ----------------
   function updateSteps() {
     const st = Planner.state, cur = curTab !== 'plan' ? 1 : st.route ? 3 : 2;
-    $$('#stepBar button').forEach(b => { const k = +b.dataset.step; b.classList.toggle('on', k === cur); b.classList.toggle('done', k < cur || (k === 2 && !!st.route)); });
+    $$('#stepBar [data-step]').forEach(b => { const k = +b.dataset.step; b.classList.toggle('on', k === cur); b.classList.toggle('done', k < cur || (k === 2 && !!st.route)); });
   }
-  $$('#stepBar button').forEach(b => b.onclick = () => {
+  $$('#stepBar [data-step]').forEach(b => b.onclick = () => {
     const k = +b.dataset.step;
     if (k === 1) switchTab('layers');
     else if (k === 2) switchTab('plan');
@@ -175,6 +184,7 @@ const UI = (() => {
     const satF = r.S.filter(q => q.sat).length / r.S.length, noTI = r.S.filter(q => q.noTI).length / r.S.length;
     if (satF > 0) add(false, `Slopes unknown on ${fmt(satF * 100)}% of the route (above 7.6 km the elevation data tops out)`);
     else add(r.maxSl <= P.maxSlope, r.maxSl <= P.maxSlope ? `No ground too steep (steepest ${fmt(r.maxSl)}°)` : `Some ground is too steep (${fmt(r.maxSl)}°) — press Reroute`);
+    if (r.S.filter(q => q.noShade).length > r.S.length / 2) add(false, 'Detailed terrain didn\'t load: small craters may be missed. Check your connection and plan again');
     if (r.loose <= 0 && noTI > 0.5) add(false, 'No ground-firmness data this far north/south (beyond 65°): soft sand can\'t be ruled out');
     else add(r.loose <= 0, r.loose <= 0 ? 'No soft sand on the way' : `Watch out: ${fmt(r.loose / 1000, 1)} km of soft sand`);
     if (r.s0.el < 0) add(false, 'Leaves before sunrise — start later');

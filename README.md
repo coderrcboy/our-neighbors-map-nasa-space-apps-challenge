@@ -66,7 +66,7 @@ You need an internet connection because the map tiles stream from NASA, USGS and
 - **Hazard-coloured routes:** green = safe, yellow = look out (steep or loose sand), red = danger. Loose sand and danger spots blink; **↻ Reroute around danger** when red appears.
 - **▶ Simulate traverse:** watch the astronaut walk the route with live distance, mission clock, O₂/battery, sun angle and blinking hazard alerts.
 - **Guided tour** on first visit (press **?** to replay).
-- **Crater-aware routing:** besides MOLA elevation (463 m), routes now read the 200 m HRSC/MOLA shaded relief to measure local steepness, so small craters, scarps and canyon walls show yellow/red and the planner walks around them.
+- **Crater-aware routing:** besides MOLA elevation (tiles at ~1.3 km per pixel), routes now read the 200 m HRSC/MOLA shaded relief to measure local steepness, so small craters, scarps and canyon walls show yellow/red and the planner walks around them.
 - **Smooth continuous zoom** (mouse wheel / trackpad glide like Google Maps) and **Mars stays red at max zoom**: the greyscale CTX/HiRISE images get a natural Mars tint (toggle in Layers).
 - `design_sketch.jpg` is the hand-drawn layout these changes came from.
 
@@ -88,7 +88,7 @@ NASA Mars Trek (JPL) · MGS MOLA & TES · Mars Odyssey THEMIS (ASU) · MRO CTX (
 
 ## Honest limits
 - Elevation comes from 8-bit MOLA tiles calibrated against landing-site elevations (RMS ≈ 70 m, saturating above +7.6 km). Route slopes are at MOLA scale (~1.3 km), so boulder-scale hazards still need a look at HiRISE imagery.
-- Radio line-of-sight uses the same MOLA tiles. Because they are 8-bit (~58 m height steps), terrain must stand ~35 m above the radio path to count as a blocker, so it catches hills, crater rims and canyon walls, not small mounds. The 3D view uses the same ~460 m terrain; its look is a guide, not a photo.
+- Radio line-of-sight uses the same MOLA tiles. Because they are 8-bit (~58 m height steps), terrain must stand ~35 m above the radio path to count as a blocker, so it catches hills, crater rims and canyon walls, not small mounds. The 3D view uses the same ~1.3 km terrain; its look is a guide, not a photo.
 - The physiology, rover and radiation models are first-order planning aids, not flight-certified.
 
 ## Files

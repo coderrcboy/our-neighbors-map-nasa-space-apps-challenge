@@ -144,7 +144,7 @@ const View3D = (() => {
           <select id="v3dSpd" title="Playback speed"><option value="0.5">½×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select></div>
         <div id="v3dHud" class="simrow"></div>
         <div id="v3dAlert"></div>
-        <div class="note" style="margin:4px 0 0">Terrain: MOLA elevation (~460 m grid) draped with HRSC/MOLA 200 m shaded relief, Mars-red tint. Heights exaggerated ×<span id="v3dExT">2</span>. Drag to look around · wheel to zoom (orbit).</div>
+        <div class="note" style="margin:4px 0 0">Terrain: MOLA elevation (~1.3 km grid as served) draped with HRSC/MOLA 200 m shaded relief, Mars-red tint. Heights exaggerated ×<span id="v3dExT">2</span>. Drag to look around · wheel to zoom (orbit).</div>
       </div>`;
     document.body.appendChild(el);
     $('#v3dClose').onclick = () => close();

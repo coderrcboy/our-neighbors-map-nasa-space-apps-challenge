@@ -93,3 +93,7 @@ NASA Mars Trek (JPL) · MGS MOLA & TES · Mars Odyssey THEMIS (ASU) · MRO CTX (
 
 ## Files
 `index.html` is the page (loads the Leaflet map library from a CDN, so no `lib` folder is needed) · `app.js` holds the map, planner and UI · `extras.js` holds the 3D view and the measure tool · `simple.js` holds Simple mode · `detail.js` holds the real-detail zoom limit · `mars.js` is Mars24 time and sun · `data.js` is the layer registry, presets and gazetteer · `server.py` is an optional local server and live-data proxy
+
+## Use of artificial intelligence (disclosure)
+Code, tests and documentation in this project were written with the help of an AI assistant (Claude by Anthropic), directed, reviewed and tested by the author. All map data, imagery and measurements come from NASA, ESA/DLR, USGS and Caltech sources (listed above); none are AI-generated. The app does not use AI to create or "upscale" terrain. No AI-generated images, video or audio are included, and no NASA branding was created or modified with AI.
+

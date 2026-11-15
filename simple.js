@@ -39,12 +39,13 @@ const UI = (() => {
     <button data-step="1"><span>1</span>Explore Mars</button>
     <button data-step="2"><span>2</span>Plan a walk or drive</button>
     <button data-step="3"><span>3</span>Is it safe?</button>
-    <button class="stepHide" id="stepHide" aria-label="Hide the steps bar" title="Hide">‹</button>`);
+    <button class="stepHide" id="stepHide" aria-label="Hide the steps bar" title="Hide" style="display:none">‹</button>`);
   stepBar.setAttribute('aria-label', 'Main steps');
   app.appendChild(stepBar);
   // phones: the step bar slides away like a sidebar; a small tab brings it back (choice remembered)
   const stepShow = el('button', { id: 'stepShow', className: 'float', title: 'Show steps' }, '<span>1·2·3</span> Steps ›');
   stepShow.setAttribute('aria-label', 'Show the steps bar');
+  stepShow.style.display = 'none'; // hidden unless style.css shows it (phones, bar hidden), so it can never appear on its own
   app.appendChild(stepShow);
   const setStepsHidden = h => { document.body.classList.toggle('steps-hidden', h); try { h ? localStorage.setItem('onm_steps_hidden', '1') : localStorage.removeItem('onm_steps_hidden'); } catch (e) {} };
   try { if (localStorage.getItem('onm_steps_hidden') === '1') document.body.classList.add('steps-hidden'); } catch (e) {}

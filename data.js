@@ -125,7 +125,7 @@ const PRESETS = [
     hab:{n:'Habitat · Bradbury landing', lat:-4.5895, lon:137.4417},
     wps:[ {n:'Pahrump Hills outcrop', lat:-4.663, lon:137.378, task:'Drill mudstone (lakebed)', dwell:45},
           {n:'Murray formation slope', lat:-4.70, lon:137.395, task:'Sample sulfate-bearing layers', dwell:30} ] },
-  { id:'vm', name:'Valles Marineris descent (rover)', mode:'rover', ret:false, view:[-12.7,-60.74,8],
+  { id:'vm', name:'Valles Marineris descent (rover, risky example)', mode:'rover', ret:false, note:'⚠ This trip is a deliberately <b>risky example</b>: a 9 km drop into the canyon, ending after dark, 62 km from base and out of radio contact. Watch the safety score explain why.', view:[-12.7,-60.74,8],
     hab:{n:'Base · Coprates north rim plateau', lat:-12.15, lon:-60.74},
     wps:[ {n:'Coprates Chasma floor', lat:-13.20, lon:-60.74, task:'Layered wall stratigraphy (9 km of exposed crust)', dwell:60} ] },
   { id:'korolev', name:'Korolev ice crater (rover, ISRU)', mode:'rover', view:[72.8,164.6,8],

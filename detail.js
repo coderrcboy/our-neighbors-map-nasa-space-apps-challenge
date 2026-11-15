@@ -36,7 +36,8 @@ const Detail = (() => {
     const z = 12, span = 0.3515625 / 2 ** z * 512;
     const col = Math.floor((lon + 180) / span), row = Math.floor((90 - lat) / span), key = row + '/' + col;
     if (cache.has(key)) return cache.get(key);
-    const p = fetch(`${HIRISE}${z}/${row}/${col}`).then(r => r.ok).catch(() => false);   // no tile = no HiRISE coverage
+    // load it as an image: no tile = no HiRISE coverage (an image load avoids the red CORS error a fetch() of a missing tile logs)
+    const p = new Promise(res => { const im = new Image(); im.onload = () => res(true); im.onerror = () => res(false); im.src = `${HIRISE}${z}/${row}/${col}`; });
     cache.set(key, p); p.then(v => cache.set(key, Promise.resolve(v)));
     return p;
   }

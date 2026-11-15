@@ -14,6 +14,19 @@ Option B is quick: double-click `index.html`. Everything works this way too (ver
 
 You need an internet connection because the map tiles stream from NASA, USGS and Caltech servers.
 
+## New in version 7 (fixes from an independent review)
+- **Security:** names from shared `#plan=` links are escaped everywhere (stop list, map pins, objectives, place card, mission brief), so a crafted link can't run code. Plan links are also fully validated (mode, coordinates, stops); a damaged link is ignored with a message instead of breaking the planner.
+- Stop minutes can't be negative (0–600, clamped).
+- Ground above about +7.6 km (the top of the 8-bit MOLA tiles, e.g. Olympus Mons) shows "> 7.6 km (data limit)" instead of a wrong number.
+- Curiosity weather says how old NASA's latest report is when it's more than 3 days old.
+- Coordinate search rejects latitudes beyond ±90° and wraps longitudes (10S 200W → 160°E). Multi-word searches like "gale crater" work.
+- Simulation pause button switches between ❚❚ and ▶.
+- Phones: the elevation chart no longer covers the step bar or the panel tabs.
+- Tour: still opens on every visit, but now has a "Don't open this tour automatically" tick box. It no longer pops up the phone keyboard when it closes.
+- The Valles Marineris preset is labelled as a deliberately risky example and explains itself.
+- The HiRISE coverage check uses an image load, so it no longer logs CORS errors.
+- Screen-reader labels on icon buttons, tooltips that match the visible tab names, 40 px map buttons, and search results cleared when a preset loads.
+
 ## New in version 6
 - **Simple / Technical switch** (top left). Simple mode is the new beginner interface; Technical mode is the full version 5 interface. The choice is remembered; `?ui=simple` or `?ui=technical` in the link forces one.
 - **Simple mode:**
@@ -72,4 +85,4 @@ NASA Mars Trek (JPL) · MGS MOLA & TES · Mars Odyssey THEMIS (ASU) · MRO CTX (
 - The physiology, rover and radiation models are first-order planning aids, not flight-certified.
 
 ## Files
-`index.html` is the page (loads the Leaflet map library from a CDN, so no `lib` folder is needed) · `app.js` holds the map, planner and UI · `extras.js` holds the 3D view and the measure tool · `simple.js` holds Simple mode · `mars.js` is Mars24 time and sun · `data.js` is the layer registry, presets and gazetteer · `server.py` is an optional local server and live-data proxy
+`index.html` is the page (loads the Leaflet map library from a CDN, so no `lib` folder is needed) · `app.js` holds the map, planner and UI · `extras.js` holds the 3D view and the measure tool · `simple.js` holds Simple mode · `detail.js` holds the real-detail zoom limit · `mars.js` is Mars24 time and sun · `data.js` is the layer registry, presets and gazetteer · `server.py` is an optional local server and live-data proxy

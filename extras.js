@@ -79,7 +79,7 @@ const Measure = (() => {
       h += '<table class="mtab"><tr><th>#</th><th>Leg</th><th>Elev.</th><th>Δh</th></tr>';
       pts.forEach((p, i) => {
         const leg = i ? hav(pts[i - 1], p) : 0, dh = i && !isNaN(p.h) && !isNaN(pts[i - 1].h) ? p.h - pts[i - 1].h : NaN;
-        h += `<tr><td>${i + 1}</td><td>${i ? fmtKm(leg) : '—'}</td><td>${isNaN(p.h) ? '…' : fmt(p.h) + ' m'}</td><td>${isNaN(dh) ? '' : (dh >= 0 ? '+' : '') + fmt(dh) + ' m'}</td></tr>`;
+        h += `<tr><td>${i + 1}</td><td>${i ? fmtKm(leg) : '—'}</td><td>${isNaN(p.h) ? '…' : elevText(p.lat, p.lon, p.h)}</td><td>${isNaN(dh) ? '' : (dh >= 0 ? '+' : '') + fmt(dh) + ' m'}</td></tr>`;
       });
       h += `</table><div class="mtot">Total <b id="mTotal">${fmtKm(total())}</b>${pts.length > 1 ? ` · straight line ${fmtKm(hav(pts[0], pts[pts.length - 1]))}` : ''}</div>`;
     }

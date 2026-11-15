@@ -78,7 +78,9 @@ const UI = (() => {
   function labelTabs() {
     $$('.tabs button[data-tab]').forEach(b => {
       const id = b.dataset.tab; if (!tabOrig[id]) tabOrig[id] = b.innerHTML;
+      if (!tabOrig[id + '_t']) tabOrig[id + '_t'] = b.title;
       b.innerHTML = mode === 'simple' ? tabOrig[id].replace(/<\/i>.*$/, '</i>' + TAB_SIMPLE[id]) : tabOrig[id];
+      b.title = mode === 'simple' ? TAB_SIMPLE[id] : tabOrig[id + '_t'];          // tooltip matches the visible label
     });
   }
   function set(m) {
@@ -263,7 +265,7 @@ const UI = (() => {
     const sun = MarsTime.sun(new Date(), lat, lng), tod = sun.el > 0 ? 'Daytime' : 'Night';
     const hab = Planner.state.hab, far = hab ? hav(hab, { lat, lon: lng }) : null;
     const water = lat > 0 && h < OCEAN_LEVEL ? '<b class="wtr">Below the old ocean level</b>' : '';
-    $('#plainHud').innerHTML = `<span>Under your mouse:</span><b>${isNaN(h) ? 'loading…' : 'Height ' + fmt(h) + ' m'}</b>${steep ? `<b>${steep}</b>` : ''}<b>${tod}, ${MarsTime.fmtH(sun.ltst)} Mars time</b>${far != null ? `<b>${far >= 1000 ? fmt(far / 1000, 1) + ' km' : fmt(far) + ' m'} from base</b>` : ''}${water}`;
+    $('#plainHud').innerHTML = `<span>Under your mouse:</span><b>${isNaN(h) ? 'loading…' : 'Height ' + elevText(lat, lng, h)}</b>${steep ? `<b>${steep}</b>` : ''}<b>${tod}, ${MarsTime.fmtH(sun.ltst)} Mars time</b>${far != null ? `<b>${far >= 1000 ? fmt(far / 1000, 1) + ' km' : fmt(far) + ' m'} from base</b>` : ''}${water}`;
   });
 
   // ---------------- phone navigation ----------------

@@ -370,3 +370,15 @@ body.ui-simple.profile-on #plainHud{display:none}
 .tabs button.alertdot{position:relative}
 .tabs button.alertdot::after{content:'';position:absolute;top:7px;right:calc(50% - 16px);width:8px;height:8px;border-radius:50%;background:var(--warn);box-shadow:0 0 0 2px var(--panel)}
 #toast .muted{color:#a8b0b9}
+
+/* ---------- v7 fixes ---------- */
+.tnoauto{display:flex;gap:6px;align-items:center;margin:8px 0 2px;color:var(--muted)}
+/* bigger map buttons for fingers (zoom + ruler) */
+.leaflet-control-zoom a,.measure-ctl a{width:40px!important;height:40px!important;line-height:40px!important;font-size:20px!important}
+/* phones, Simple mode: keep the elevation chart clear of the step bar and the panel's tab row */
+@media (max-width:900px){
+  body.ui-simple #profile{bottom:calc(44vh + 52px)}
+  body.ui-simple.profile-on #stepBar{bottom:calc(44vh + 180px)}
+  body.ui-simple.profile-on #simHud{bottom:calc(44vh + 226px)}
+  body.ui-simple.profile-on #detailChip{bottom:calc(44vh + 230px)}
+}

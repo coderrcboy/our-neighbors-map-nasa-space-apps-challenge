@@ -9,6 +9,8 @@ const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const fmt = (v, d = 0) => (v == null || isNaN(v)) ? '—' : Number(v).toLocaleString('en-US', { maximumFractionDigits: d, minimumFractionDigits: d });
+// escape text before putting it into HTML (names can come from shared plan links)
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmtLL = (lat, lon) => `${Math.abs(lat).toFixed(4)}°${lat >= 0 ? 'N' : 'S'} ${Math.abs(lon).toFixed(4)}°${lon >= 0 ? 'E' : 'W'}`;
 function hav(a, b) {
   const p1 = a.lat * D2R, p2 = b.lat * D2R, dp = p2 - p1, dl = (b.lon - a.lon) * D2R;
@@ -78,6 +80,8 @@ function shadeSlope(lat, lon, z = SHADE.maxZ) {
 const shadeLevel = metres => clamp(Math.round(Math.log2(demPxM(0) / Math.max(metres, 1))), 0, SHADE.maxZ);
 const elev = (lat, lon, z = DEM.maxZ) => { const v = dem.val(z, lat, lon); return isNaN(v) ? NaN : DEM.a + DEM.b * v; };
 const demSat = (lat, lon) => dem.val(DEM.maxZ, lat, lon) >= DEM.satDN - 0.5;
+// elevation as text; the 8-bit MOLA tiles top out at about +7.6 km, so higher ground is shown as a lower bound
+const elevText = (lat, lon, h = elev(lat, lon)) => isNaN(h) ? null : demSat(lat, lon) ? '> 7.6 km (data limit)' : fmt(h) + ' m';
 const demPxM = z => (180 / (256 * 2 ** z)) * D2R * R_MARS;   // ~1.3 km at z5
 const pressure = h => 610 * Math.exp(-h / 11100);              // Pa, simple isothermal model
 
@@ -306,7 +310,7 @@ const Planner = (() => {
     const pts = [st.hab, ...st.wps].filter(Boolean);
     pts.forEach((p, i) => {
       const isHab = p === st.hab;
-      const m = L.marker([p.lat, p.lon], { draggable: true, icon: icon(isHab ? 'hab' : 'sci', isHab ? '⌂ ' + p.n.replace('Habitat · ', '') : `${i}. ${p.n}`), zIndexOffset: 1000 });
+      const m = L.marker([p.lat, p.lon], { draggable: true, icon: icon(isHab ? 'hab' : 'sci', isHab ? '⌂ ' + esc(p.n.replace('Habitat · ', '')) : `${i}. ${esc(p.n)}`), zIndexOffset: 1000 });
       m.on('dragend', e => { const ll = e.target.getLatLng(); p.lat = ll.lat; p.lon = ll.lng; clearRoute(); renderList(); redrawMarkers(); });
       lay.addLayer(m);
     });
@@ -334,15 +338,16 @@ const Planner = (() => {
   function renderList() {
     const P = PROFILES[st.mode];
     let h = '';
-    if (st.hab) h += `<div class="wp"><div class="n h">⌂</div><input value="${st.hab.n}" data-f="hab.n"><span class="muted small">${st.hab.lat.toFixed(3)}, ${st.hab.lon.toFixed(3)}</span></div>`;
+    if (st.hab) h += `<div class="wp"><div class="n h">⌂</div><input value="${esc(st.hab.n)}" data-f="hab.n" aria-label="Habitat name"><span class="muted small">${st.hab.lat.toFixed(3)}, ${st.hab.lon.toFixed(3)}</span></div>`;
     st.wps.forEach((w, i) => {
-      h += `<div class="wp"><div class="n">${i + 1}</div><div><input value="${w.n}" data-f="w${i}.n"><div class="row" style="margin-top:4px"><input value="${w.task}" data-f="w${i}.task" title="Science task"><input type="number" style="width:62px" value="${w.dwell}" data-f="w${i}.dwell" title="Dwell (min)"></div></div><button class="x" data-del="${i}" title="Remove">✕</button></div>`;
+      h += `<div class="wp"><div class="n">${i + 1}</div><div><input value="${esc(w.n)}" data-f="w${i}.n" aria-label="Stop ${i + 1} name"><div class="row" style="margin-top:4px"><input value="${esc(w.task)}" data-f="w${i}.task" title="Science task" aria-label="Stop ${i + 1} science task"><input type="number" style="width:62px" value="${w.dwell}" min="0" max="600" step="5" data-f="w${i}.dwell" title="Dwell (min)" aria-label="Stop ${i + 1} minutes"></div></div><button class="x" data-del="${i}" title="Remove" aria-label="Remove stop ${i + 1}">✕</button></div>`;
     });
     if (!st.hab && !st.wps.length) h = `<p class="muted small">No habitat yet. Place one on the map, click a lander in <b>Explore</b>, or load a preset mission.</p>`;
     $('#wplist').innerHTML = h;
     $$('#wplist input').forEach(inp => inp.onchange = () => {
       const [k, f] = inp.dataset.f.split('.'); const obj = k === 'hab' ? st.hab : st.wps[+k.slice(1)];
-      obj[f] = f === 'dwell' ? +inp.value : inp.value; redrawMarkers();
+      if (f === 'dwell') { const v = clamp(Math.round(+inp.value) || 0, 0, 600); inp.value = v; obj[f] = v; } else obj[f] = inp.value.slice(0, 80);
+      redrawMarkers();
     });
     $$('[data-del]').forEach(b => b.onclick = () => { st.wps.splice(+b.dataset.del, 1); clearRoute(); renderList(); redrawMarkers(); });
     $('#maxSlope').textContent = P.maxSlope + '°';
@@ -614,7 +619,7 @@ const Planner = (() => {
     <div class="card sv"><table class="svtab">${SV.factors.map(f => `<tr class="${f.p >= .97 ? 'ok' : f.p >= .8 ? 'warn' : 'bad'}"><td><b>${f.name}</b><div class="muted small">${f.why}</div></td><td class="svp">${fmt(f.p * 100)}%</td></tr>`).join('')}</table>
       <div class="note" style="margin:6px 0 0">Each factor is a survival chance worked out from how close the plan comes to a safety limit; the overall score multiplies them. It is a planning index from first-order models, not a measured probability.</div></div>
     <h3>Safety checklist</h3><ul class="checks">${checks.map(([l, m]) => `<li class="${l}">${m}</li>`).join('')}</ul>
-    <h3>Science objectives</h3><ul class="checks">${st.wps.map((w, i) => `<li class="ok"><b>${i + 1}. ${w.n}</b> — ${w.task} (${w.dwell} min)${sciNote(w)}</li>`).join('')}</ul>
+    <h3>Science objectives</h3><ul class="checks">${st.wps.map((w, i) => `<li class="ok"><b>${i + 1}. ${esc(w.n)}</b> — ${esc(w.task)} (${w.dwell} min)${sciNote(w)}</li>`).join('')}</ul>
     <div class="row" style="margin-top:10px"><button class="btn sm" id="btnGeo">Download GeoJSON</button><button class="btn sm" id="btnBrief">Mission brief</button><button class="btn sm" id="btnLink">Copy link</button></div>
     <p class="note">Models: walking speed — Tobler hiking function ×0.6 suited penalty; metabolic cost — Pandolf (1977) load-carriage equation with weight terms scaled to 0.38 g; O₂ — 20.1 kJ per litre; radio — line-of-sight from habitat mast to crew antenna over MOLA terrain with Mars curvature; terrain — MOLA DEM (463 m) for elevation + HRSC/MOLA 200 m shaded relief for local steepness (craters, scarps) + THEMIS night-IR thermal inertia; sun — Mars24 (Allison &amp; McEwen 2000); radiation — MSL/RAD surface baseline (Hassler et al. 2014). Planning aid, not flight-certified.</p>`;
     $('#telemetry').innerHTML = h;
@@ -640,7 +645,7 @@ const Planner = (() => {
   }
   function brief() {
     const w = window.open('', '_blank'); const tel = $('#telemetry').innerHTML; const prof = $('#profile canvas').toDataURL();
-    w.document.write(`<html><head><title>Marswalk mission brief</title><style>:root{--ok:#1aa36a;--warn:#e0a800;--bad:#d33}body{font:13px system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#fff;color:#111;padding:24px;max-width:780px;margin:auto}h3{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#666;margin:16px 0 6px}.card{background:#f6f6f6;border:1px solid #ddd;border-radius:8px;padding:10px;margin:8px 0}.kv{display:grid;grid-template-columns:1fr auto;gap:3px 12px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}.kv span:nth-child(odd){color:#555;font-family:inherit}.status{padding:8px 10px;border-radius:8px;font-weight:700;margin-top:10px}.status.go{background:#e5f7ee;color:#0b7a46}.status.caution{background:#fff4d6;color:#8a6200}.status.nogo{background:#fde3e3;color:#b00000}.checks{list-style:none;padding:0}.checks li{padding:3px 0 3px 16px;position:relative}.checks li:before{content:'';position:absolute;left:2px;top:8px;width:8px;height:8px;border-radius:50%}.checks li.ok:before{background:#1aa36a}.checks li.warn:before{background:#e0a800}.checks li.bad:before{background:#d33}.bar{height:6px;background:#ddd;border-radius:3px;overflow:hidden}.bar i{display:block;height:100%}.note,.muted{color:#555;font-size:11px}.small{font-size:11px}button{display:none}</style></head><body><h1 style="margin:0">Marswalk mission brief</h1><p>${st.hab.n} · ${fmtLL(st.hab.lat, st.hab.lon)} · ${PROFILES[st.mode].label}</p><img src="${prof}" style="width:100%;border:1px solid #ddd;border-radius:8px;background:#111">${tel}<p class="note">Generated by Our Neighbor's Map · NASA Space Apps Challenge 2026</p><script>setTimeout(()=>print(),400)<\/script></body></html>`);
+    w.document.write(`<html><head><title>Marswalk mission brief</title><style>:root{--ok:#1aa36a;--warn:#e0a800;--bad:#d33}body{font:13px system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#fff;color:#111;padding:24px;max-width:780px;margin:auto}h3{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#666;margin:16px 0 6px}.card{background:#f6f6f6;border:1px solid #ddd;border-radius:8px;padding:10px;margin:8px 0}.kv{display:grid;grid-template-columns:1fr auto;gap:3px 12px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}.kv span:nth-child(odd){color:#555;font-family:inherit}.status{padding:8px 10px;border-radius:8px;font-weight:700;margin-top:10px}.status.go{background:#e5f7ee;color:#0b7a46}.status.caution{background:#fff4d6;color:#8a6200}.status.nogo{background:#fde3e3;color:#b00000}.checks{list-style:none;padding:0}.checks li{padding:3px 0 3px 16px;position:relative}.checks li:before{content:'';position:absolute;left:2px;top:8px;width:8px;height:8px;border-radius:50%}.checks li.ok:before{background:#1aa36a}.checks li.warn:before{background:#e0a800}.checks li.bad:before{background:#d33}.bar{height:6px;background:#ddd;border-radius:3px;overflow:hidden}.bar i{display:block;height:100%}.note,.muted{color:#555;font-size:11px}.small{font-size:11px}button{display:none}</style></head><body><h1 style="margin:0">Marswalk mission brief</h1><p>${esc(st.hab.n)} · ${fmtLL(st.hab.lat, st.hab.lon)} · ${PROFILES[st.mode].label}</p><img src="${prof}" style="width:100%;border:1px solid #ddd;border-radius:8px;background:#111">${tel}<p class="note">Generated by Our Neighbor's Map · NASA Space Apps Challenge 2026</p><script>setTimeout(()=>print(),400)<\/script></body></html>`);
     w.document.close();
   }
   function saveHash() {
@@ -651,18 +656,26 @@ const Planner = (() => {
     const m = location.hash.match(/plan=([^&]+)/); if (!m) return false;
     try {
       const o = JSON.parse(decodeURIComponent(escape(atob(decodeURIComponent(m[1])))));
-      st.mode = o.m; st.returnHome = !!o.r; st.hab = o.h && { n: o.h[0], lat: o.h[1], lon: o.h[2] };
-      st.wps = o.w.map(a => ({ n: a[0], lat: a[1], lon: a[2], task: a[3], dwell: a[4] }));
+      // check every value before using it: a damaged or hand-made link must not break the planner
+      const bad = () => { throw new Error('bad plan link'); };
+      const num = (v, lo, hi) => { v = +v; return Number.isFinite(v) && v >= lo && v <= hi ? v : bad(); };
+      const txt = (v, d) => (v == null || v === '' ? d : String(v)).slice(0, 80);
+      if (!o || !Object.prototype.hasOwnProperty.call(PROFILES, o.m)) bad();
+      const hab = o.h ? { n: txt(o.h[0], 'Habitat'), lat: num(o.h[1], -90, 90), lon: num(o.h[2], -180, 180) } : null;
+      const wps = (Array.isArray(o.w) ? o.w : []).slice(0, 30).map((a, i) => Array.isArray(a) ? ({ n: txt(a[0], `Waypoint ${i + 1}`), lat: num(a[1], -90, 90), lon: num(a[2], -180, 180), task: txt(a[3], 'Sample collection'), dwell: clamp(Math.round(+a[4]) || 0, 0, 600) }) : bad());
+      st.mode = o.m; st.returnHome = !!o.r; st.hab = hab; st.wps = wps;
       syncUI(); renderList(); redrawMarkers();
       if (st.hab) map.setView([st.hab.lat, st.hab.lon], 11);
       if (st.hab && st.wps.length) compute();
       return true;
-    } catch (e) { return false; }
+    } catch (e) { history.replaceState(null, '', location.pathname + location.search); toast('⚠ This plan link is damaged or not from Our Neighbor\'s Map, so it was ignored.', 6000); return false; }
   }
   function syncUI() { $('#mode').value = st.mode; $('#retHome').checked = st.returnHome; renderList(); renderSettings(); }
   function loadPreset(id) {
     const p = PRESETS.find(x => x.id === id); if (!p) return;
     st.mode = p.mode; st.returnHome = p.ret !== false; st.hab = { ...p.hab }; st.wps = p.wps.map(w => ({ ...w })); st.start = null; $('#start').value = '';
+    $('#qres').innerHTML = ''; $('#q').value = '';
+    if (p.note) toast(p.note, 7000);
     syncUI(); clearRoute(); redrawMarkers(); map.setView([p.view[0], p.view[1]], p.view[2]);
     // switch on the best imagery for that site
     const ov = { jezero: ['jez_h', 'jez_c'], gale: ['gale_h', 'gale_c'] }[id] || [];
@@ -854,7 +867,7 @@ const Conditions = (() => {
     $('#ptInfo').innerHTML = `<div class="kv">
       <span>Location</span><span>${fmtLL(pt.lat, pt.lon)}</span>
       <span>Nearest named feature</span><span>${nm ? nm.n + ' · ' + fmt(nm.d / 1000) + ' km' : '—'}</span>
-      <span>Elevation (MOLA)</span><span>${isNaN(h) ? '…' : fmt(h) + ' m' + (demSat(pt.lat, pt.lon) ? ' (≥ sat.)' : '')}</span>
+      <span>Elevation (MOLA)</span><span>${elevText(pt.lat, pt.lon, h) || '…'}</span>
       <span>Regional slope</span><span>${isNaN(sl) ? '…' : fmt(sl, 1) + '°'}</span>
       <span>Surface pressure (est.)</span><span>${isNaN(h) ? '…' : fmt(pressure(h)) + ' Pa'}</span>
       <span>Ground (THEMIS night IR)</span><span>${isNaN(t) ? 'no data' : t > 140 ? 'rocky / bedrock' : t < 55 ? 'dusty / loose' : 'mixed'}</span>
@@ -912,6 +925,7 @@ const Conditions = (() => {
   async function weather() {
     const j = await getJSON('https://mars.nasa.gov/rss/api/?feed=weather&category=msl&feedtype=json', 'api/rems', 'rems');
     const live = !!(j && j.soles); const w = live ? j.soles.find(s => s.max_temp !== '--') || j.soles[0] : REMS_SNAPSHOT;
+    const age = (Date.now() - Date.parse(w.terrestrial_date + 'T12:00:00Z')) / 864e5;   // days since NASA's latest report
     $('#rems').innerHTML = `<div class="kv">
       <span>Sol / Earth date</span><span>${w.sol} · ${w.terrestrial_date}</span>
       <span>Air temp min / max</span><span>${w.min_temp} / ${w.max_temp} °C</span>
@@ -919,7 +933,7 @@ const Conditions = (() => {
       <span>Pressure</span><span>${w.pressure} Pa</span>
       <span>Sky / UV</span><span>${w.atmo_opacity} · UV ${w.local_uv_irradiance_index}</span>
       <span>Sunrise / sunset</span><span>${w.sunrise} / ${w.sunset}</span></div>
-      <p class="note">Curiosity REMS (Centro de Astrobiología / NASA-JPL), Gale crater. ${live ? '<span style="color:var(--ok)">● live</span>' : `<span style="color:var(--warn)">● saved report from ${w.terrestrial_date} — live feed ${feedErr.rems || 'unavailable'}</span><br>${retryBtn('rems')}`}</p>`;
+      <p class="note">Curiosity REMS (Centro de Astrobiología / NASA-JPL), Gale crater. ${live ? (age > 3 ? `<span style="color:var(--warn)">● live feed, but NASA's latest report is ${fmt(age)} days old (${w.terrestrial_date})</span>` : '<span style="color:var(--ok)">● live</span>') : `<span style="color:var(--warn)">● saved report from ${w.terrestrial_date} — live feed ${feedErr.rems || 'unavailable'}</span><br>${retryBtn('rems')}`}</p>`;
   }
   async function spaceWx() {
     const end = new Date(), st = new Date(end - 7 * 864e5), f = d => d.toISOString().slice(0, 10);
@@ -959,13 +973,20 @@ function initExplore() {
   q.oninput = () => {
     const s = q.value.trim(); let out = [];
     const m = s.match(/^(-?[\d.]+)\s*°?\s*([NS])?[\s,]+(-?[\d.]+)\s*°?\s*([EW])?$/i);
-    if (m) { let la = +m[1], lo = +m[3]; if (/s/i.test(m[2] || '')) la = -la; if (/w/i.test(m[4] || '')) lo = -lo; if (lo > 180) lo -= 360; out.push([`Go to ${fmtLL(la, lo)}`, '', la, lo]); }
-    if (s.length > 1) {
-      const lc = s.toLowerCase();
-      out = out.concat(SITES.filter(x => x.n.toLowerCase().includes(lc)).map(x => [x.n, 'Landing site', x.lat, x.lon, x.d]));
-      out = out.concat(GAZ.filter(g => g[0].toLowerCase().includes(lc)).slice(0, 12));
+    let note = '';
+    if (m) {
+      let la = +m[1], lo = +m[3]; if (/s/i.test(m[2] || '')) la = -la; if (/w/i.test(m[4] || '')) lo = -lo;
+      lo = ((lo + 180) % 360 + 360) % 360 - 180;                    // any longitude → −180…180 (e.g. 200W = 160E)
+      if (Math.abs(la) <= 90 && Number.isFinite(lo)) out.push([`Go to ${fmtLL(la, lo)}`, '', la, lo]);
+      else note = 'Latitude must be between 90°S and 90°N.';
     }
-    res.innerHTML = out.map((g, i) => `<div data-i="${i}"><b>${g[0]}</b> <small>${g[1]} ${g[1] ? '·' : ''} ${fmtLL(g[2], g[3])}</small></div>`).join('');
+    if (s.length > 1) {
+      const words = s.toLowerCase().split(/\s+/).filter(Boolean);     // every word must match the name or its type ("gale crater")
+      const hit = str => words.every(w => str.toLowerCase().includes(w));
+      out = out.concat(SITES.filter(x => hit(x.n + ' landing site lander rover')).map(x => [x.n, 'Landing site', x.lat, x.lon, x.d]));
+      out = out.concat(GAZ.filter(g => hit(g[0] + ' ' + g[1])).slice(0, 12));
+    }
+    res.innerHTML = (note ? `<div class="muted small" style="padding:6px">${note}</div>` : '') + out.map((g, i) => `<div data-i="${i}"><b>${esc(g[0])}</b> <small>${esc(g[1])} ${g[1] ? '·' : ''} ${fmtLL(g[2], g[3])}</small></div>`).join('');
     $$('#qres [data-i]').forEach(d => d.onclick = () => {
       const g = out[+d.dataset.i];
       map.flyTo([g[2], g[3]], g[1] === 'Crater' || g[1] === 'Landing site' ? 10 : 7, { duration: 1.2 });
@@ -1024,13 +1045,13 @@ const Place = (() => {
     const kind = (p.type || '').split(' ·')[0], h = elev(p.lat, p.lon), t = themis.val(5, p.lat, p.lon), sun = MarsTime.sun(new Date(), p.lat, p.lon), nm = nearestName(p.lat, p.lon);
     const desc = p.desc || NOTABLE[p.n] || FEATURE_INFO[kind] || (nm ? `About ${fmt(nm.d / 1000)} km from ${nm.n}.` : 'A spot on the Martian surface.');
     const ground = isNaN(t) ? 'no thermal data' : t > 140 ? 'rocky / bedrock (firm)' : t < 55 ? 'dusty / loose (soft)' : 'mixed rock & regolith';
-    $('#placeCard').innerHTML = `<div class="place"><button class="x" id="placeX" title="Close">✕</button>
-      <div class="type">${p.type || ''}</div><h2>${p.n}</h2><div class="muted small" style="font-family:var(--mono)">${fmtLL(p.lat, p.lon)}</div>
-      <p>${desc}</p>
-      <div class="kv"><span>Elevation</span><span>${isNaN(h) ? '…' : fmt(h) + ' m'}</span><span>Ground</span><span>${ground}</span>
+    $('#placeCard').innerHTML = `<div class="place"><button class="x" id="placeX" title="Close" aria-label="Close place card">✕</button>
+      <div class="type">${esc(p.type || '')}</div><h2>${esc(p.n)}</h2><div class="muted small" style="font-family:var(--mono)">${fmtLL(p.lat, p.lon)}</div>
+      <p>${esc(desc)}</p>
+      <div class="kv"><span>Elevation</span><span>${elevText(p.lat, p.lon, h) || '…'}</span><span>Ground</span><span>${ground}</span>
         <span>Local solar time</span><span>${MarsTime.fmtH(sun.ltst)}</span><span>Sun now</span><span>${fmt(sun.el, 0)}° ${sun.el > 0 ? '(day)' : '(night)'}</span>
         <span>Daylight</span><span>${sun.polar === 'day' ? '24.6 h' : sun.polar === 'night' ? '0 h (polar night)' : fmt((sun.set - sun.rise) * 1.0275, 1) + ' h'}</span>
-        ${nm && nm.n !== p.n ? `<span>Nearest feature</span><span>${nm.n} · ${fmt(nm.d / 1000)} km</span>` : ''}</div>
+        ${nm && nm.n !== p.n ? `<span>Nearest feature</span><span>${esc(nm.n)} · ${fmt(nm.d / 1000)} km</span>` : ''}</div>
       <button class="btn pri start" id="placeStart">▶ Start mission here</button>
       <div class="row" style="margin-top:6px"><button class="btn sm" id="placeWp">＋ Add as science stop</button><button class="btn sm" id="placeCond">☀ Conditions</button></div></div>`;
     $('#placeX').onclick = () => { cur = null; render(); pin && map.removeLayer(pin); pin = null; };
@@ -1076,11 +1097,11 @@ const Sim = (() => {
     else if (sun.el < 5) alert = `<div class="alert warn">⚠ LOW SUN (${fmt(sun.el, 0)}°) — head back to the habitat</div>`;
     else alert = `<div class="alert ok">✓ Terrain nominal</div>`;
     if (f >= 1) alert = `<div class="alert ok">✓ Traverse complete — ${R.S[R.S.length - 1].d > 0 && hav(R.S[R.S.length - 1], hab) < 200 ? 'crew back at the habitat' : 'destination reached'}</div>`;
-    $('#simHud').innerHTML = `<div class="simrow"><b>▶ Traverse simulation</b><span class="sp"></span><button class="btn sm" id="simPause">${paused ? '▶' : '❚❚'}</button><button class="btn sm" id="simStop">✕</button></div>
+    $('#simHud').innerHTML = `<div class="simrow"><b>▶ Traverse simulation</b><span class="sp"></span><button class="btn sm" id="simPause" aria-label="${paused ? 'Resume' : 'Pause'}">${paused ? '▶' : '❚❚'}</button><button class="btn sm" id="simStop" aria-label="Stop simulation">✕</button></div>
       <div class="simrow" style="margin-top:4px"><span><b>${fmt(D / 1000, 2)}</b> / ${fmt(S[S.length - 1].d / 1000, 2)} km</span><span>T+<b>${hh}:${String(mm).padStart(2, '0')}</b></span><span>${res}</span><span>☀ <b>${fmt(sun.el, 0)}°</b></span><span>⛰ <b>${fmt(b.h)}</b> m</span><span>📡 <b style="color:${b.nolos ? RADIO_COL : 'var(--ok)'}">${b.nolos ? 'LOST' : 'OK'}</b></span></div>
       <div class="bar"><i style="width:${f * 100}%;background:var(--blue)"></i></div>${alert}`;
     $('#simStop').onclick = () => { stop(); Planner.setHover(null); };
-    $('#simPause').onclick = () => { if (!paused) { paused = true; pausedAt = performance.now(); } else { paused = false; t0 += performance.now() - pausedAt; raf = requestAnimationFrame(step); } };
+    $('#simPause').onclick = e => { const b = e.currentTarget; if (!paused) { paused = true; pausedAt = performance.now(); b.textContent = '▶'; b.setAttribute('aria-label', 'Resume'); } else { paused = false; t0 += performance.now() - pausedAt; b.textContent = '❚❚'; b.setAttribute('aria-label', 'Pause'); raf = requestAnimationFrame(step); } };
     if (f < 1) raf = requestAnimationFrame(step); else { raf = 0; setTimeout(() => Planner.setHover(null), 1500); }
   }
   return { start, stop, get running() { return !!raf; } };
@@ -1117,13 +1138,16 @@ const Tour = (() => {
     if (tx < 12) tx = 12; ty = clamp(ty, 12, innerHeight - 230);
     T.innerHTML = `<div class="shade" style="left:${r.left - pad}px;top:${r.top - pad}px;width:${r.width + 2 * pad}px;height:${r.height + 2 * pad}px;${el && s.sel !== '#map' ? '' : 'border-color:transparent'}"></div>
       <div class="tip" style="left:${tx}px;top:${ty}px"><div class="step">Step ${k + 1} of ${steps.length}</div><h4>${s.t}</h4><p>${s.b}</p>
+      <label class="small tnoauto"><input type="checkbox" id="tOff" ${autoOff() ? 'checked' : ''}> Don't open this tour automatically</label>
       <div class="row"><button class="btn sm" id="tSkip">Skip tour</button><span class="sp"></span>${k ? '<button class="btn sm" id="tBack">Back</button>' : ''}<button class="btn sm pri" id="tNext">${k === steps.length - 1 ? 'Finish' : 'Next'}</button></div></div>`;
+    $('#tOff').onchange = e => { try { e.target.checked ? localStorage.setItem('onm_tour_off', '1') : localStorage.removeItem('onm_tour_off'); } catch (x) {} };
     $('#tSkip').onclick = end; $('#tNext').onclick = () => { if (k < steps.length - 1) { k++; show(); } else end(); };
     if ($('#tBack')) $('#tBack').onclick = () => { k--; show(); };
   }
-  function end() { $('#tour').style.display = 'none'; try { localStorage.setItem('onm_tour_seen', '1'); } catch (e) {} switchTab('plan'); $('#q').focus(); }
+  function end() { $('#tour').style.display = 'none'; switchTab('plan'); if (innerWidth > 900 && matchMedia('(pointer: fine)').matches) $('#q').focus(); }   // no focus on phones (keyboard would pop up)
+  const autoOff = () => { try { return localStorage.getItem('onm_tour_off') === '1'; } catch (e) { return false; } };
   function start() { steps = document.body.classList.contains('ui-simple') && typeof SIMPLE_TOUR !== 'undefined' ? SIMPLE_TOUR : TECH_STEPS; k = 0; show(); }
-  function maybeAuto() { if (!navigator.webdriver) setTimeout(start, 900); }   // the tour opens on every page load (Skip closes it)
+  function maybeAuto() { if (!navigator.webdriver && !autoOff()) setTimeout(start, 900); }   // opens on every page load unless the visitor ticked "Don't open automatically"
   return { start, maybeAuto };
 })();
 
@@ -1136,7 +1160,7 @@ let hudPos = null;
 function hudUpdate() {
   if (!hudPos) return;
   const { lat, lng } = hudPos, h = elev(lat, lng);
-  $('#hudEl').textContent = isNaN(h) ? 'loading…' : fmt(h) + ' m';
+  $('#hudEl').textContent = elevText(lat, lng, h) || 'loading…';
   if (isNaN(h)) {           // elevation tile not loaded yet: fetch it, then refresh the readout
     const at = hudPos; dem.ensure(DEM.maxZ, lat - .05, lng - .05, lat + .05, lng + .05).then(() => { if (hudPos === at) hudUpdate(); });
   }

@@ -228,3 +228,11 @@ body.profile-on #measureBox{bottom:300px}
 .v3d-top select,.v3d-bot select{width:auto;flex:none;padding:3px 6px}
 .v3d-top label{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
 #v3dSlider{flex:1;min-width:140px}
+/* ---------- v5: survivability ---------- */
+.status{display:flex;align-items:center;gap:10px;font-size:18px}
+.svtag{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.8px;opacity:.85;margin-left:auto}
+.svtab{width:100%;border-collapse:collapse;font-size:12.5px}
+.svtab td{padding:5px 2px;border-bottom:1px solid #222a33;vertical-align:top}
+.svtab tr:last-child td{border-bottom:0}
+.svtab .svp{text-align:right;font-family:var(--mono);font-weight:700;white-space:nowrap;padding-left:8px}
+.svtab tr.ok .svp{color:var(--ok)} .svtab tr.warn .svp{color:var(--warn)} .svtab tr.bad .svp{color:var(--bad)}

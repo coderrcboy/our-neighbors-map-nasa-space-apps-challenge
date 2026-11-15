@@ -526,8 +526,9 @@ const Planner = (() => {
       else if (st.mode === 'eva') add(mins > 15 ? 'bad' : 'warn', `Radio blackout on ${fmt(rd.lost / 1000, 2)} km (longest ~${fmt(mins)} min) — terrain blocks the ${r.mast} m habitat mast; raise the mast, add a relay or use orbiter relay`);
       else add('warn', `Radio blackout on ${fmt(rd.lost / 1000, 1)} km (longest ~${fmt(mins)} min) — rely on orbiter relay or a deployable repeater`); }
     add(r.dose < 0.5 ? 'ok' : 'warn', `Radiation ≈ ${fmt(r.dose, 3)} mSv for this sortie (no solar particle event)`);
-    const worst = checks.some(c => c[0] === 'bad') ? 'nogo' : checks.some(c => c[0] === 'warn') ? 'caution' : 'go';
-    const label = { go: 'GO', caution: 'GO — WITH CAUTIONS', nogo: 'NO-GO' }[worst];
+    const SV = survivability(r, P, st.mode); r.surv = SV;
+    const worst = SV.pct >= 85 ? 'go' : SV.pct >= 60 ? 'caution' : 'nogo';
+    const label = `Survivability ${fmt(SV.pct)}%<span class="svtag">${{ go: 'low risk', caution: 'elevated risk', nogo: 'high risk' }[worst]}</span>`;
     const endT = new Date(r.start.getTime() + r.totalS * 1000);
     const nBad = r.S.filter(p => hazard(p, P) === 'bad').length, nWarn = r.S.filter(p => hazard(p, P) === 'warn').length;
     let h = `<div class="status ${worst}">● ${label}</div>
@@ -559,7 +560,10 @@ const Planner = (() => {
       <span>Sun at depart / return</span><span>${fmt(r.s0.el, 0)}° / ${fmt(r.s1.el, 0)}°</span>
       <span>Season</span><span>MY${r.T0.MY} · Ls ${fmt(r.T0.Ls, 1)}°</span>
     </div><div class="note">${MarsTime.season(r.T0.Ls, st.hab.lat)}</div></div>
-    <h3>Go / No-Go checklist</h3><ul class="checks">${checks.map(([l, m]) => `<li class="${l}">${m}</li>`).join('')}</ul>
+    <h3>What the ${fmt(SV.pct)}% is based on</h3>
+    <div class="card sv"><table class="svtab">${SV.factors.map(f => `<tr class="${f.p >= .97 ? 'ok' : f.p >= .8 ? 'warn' : 'bad'}"><td><b>${f.name}</b><div class="muted small">${f.why}</div></td><td class="svp">${fmt(f.p * 100)}%</td></tr>`).join('')}</table>
+      <div class="note" style="margin:6px 0 0">Each factor is a survival chance worked out from how close the plan comes to a safety limit; the overall score multiplies them. It is a planning index from first-order models, not a measured probability.</div></div>
+    <h3>Safety checklist</h3><ul class="checks">${checks.map(([l, m]) => `<li class="${l}">${m}</li>`).join('')}</ul>
     <h3>Science objectives</h3><ul class="checks">${st.wps.map((w, i) => `<li class="ok"><b>${i + 1}. ${w.n}</b> — ${w.task} (${w.dwell} min)${sciNote(w)}</li>`).join('')}</ul>
     <div class="row" style="margin-top:10px"><button class="btn sm" id="btnGeo">Download GeoJSON</button><button class="btn sm" id="btnBrief">Mission brief</button><button class="btn sm" id="btnLink">Copy link</button></div>
     <p class="note">Models: walking speed — Tobler hiking function ×0.6 suited penalty; metabolic cost — Pandolf (1977) load-carriage equation with weight terms scaled to 0.38 g; O₂ — 20.1 kJ per litre; radio — line-of-sight from habitat mast to crew antenna over MOLA terrain with Mars curvature; terrain — MOLA DEM (463 m) for elevation + HRSC/MOLA 200 m shaded relief for local steepness (craters, scarps) + THEMIS night-IR thermal inertia; sun — Mars24 (Allison &amp; McEwen 2000); radiation — MSL/RAD surface baseline (Hassler et al. 2014). Planning aid, not flight-certified.</p>`;
@@ -665,6 +669,43 @@ const Planner = (() => {
   function startAt(lat, lon, n) { habAt(lat, lon, 'Habitat · ' + n); if (st.click !== 'wp') setClick('wp'); toast('✓ Habitat placed. Now click the map to add science stops, then press <b>Compute safe route</b>.', 6000); }
   return { init, habAt, addWp, startAt, loadPreset, loadHash, compute, get state() { return st; }, setHover(p) { if (!p) { hoverMk && map.removeLayer(hoverMk); hoverMk = null; return; } if (!hoverMk) hoverMk = L.circleMarker([p.lat, p.lon], { radius: 7, color: '#fff', weight: 2, fillColor: '#e0603a', fillOpacity: 1 }).addTo(map); else hoverMk.setLatLng([p.lat, p.lon]); } };
 })();
+
+// ---------------------------------------------------------------------
+//  Survivability index: product of per-hazard survival factors (1 = no added risk)
+// ---------------------------------------------------------------------
+function consumableF(u) {        // u = fraction of capacity used; 25 % reserve rule
+  if (u <= 0.75) return 1;
+  if (u <= 0.9) return 1 - (u - 0.75) / 0.15 * 0.15;          // reserve eaten into: 100 → 85 %
+  if (u <= 1) return 0.85 - (u - 0.9) / 0.1 * 0.45;            // no reserve left: 85 → 40 %
+  return 0.4 * Math.exp(-4 * (u - 1));                         // runs out before return: survival relies on rescue
+}
+function survivability(r, P, mode) {
+  const F = [], add = (name, p, why) => F.push({ name, p: clamp(p, 0.001, 1), why });
+  const S = r.S; let badL = 0, steepL = 0;
+  for (let i = 1; i < S.length; i++) { const ds = S[i].d - S[i - 1].d, hz = hazard(S[i], P); if (hz === 'bad') badL += ds; else if (S[i].slope > P.maxSlope * 0.5) steepL += ds; }
+  if (mode === 'eva') {
+    const uo = r.o2 / P.o2, ub = r.totalS / 3600 / P.battH;
+    add('Oxygen', consumableF(uo), `${fmt(r.o2, 2)} kg needed of ${P.o2} kg usable (${fmt(uo * 100)}%). Full marks up to 75 % (25 % reserve).`);
+    add('Suit battery / life support', consumableF(ub), `${fmt(r.totalS / 3600, 1)} h sortie on a ${P.battH} h battery (${fmt(ub * 100)}%).`);
+  } else {
+    const ue = r.kwh / P.battKWh;
+    add('Rover battery', consumableF(ue), `${fmt(r.kwh, 1)} kWh of ${P.battKWh} kWh (${fmt(ue * 100)}%). Full marks up to 75 %.`);
+  }
+  const fr = r.far / P.walkback;
+  add(mode === 'eva' ? 'Walk-back distance' : 'Rescue range', fr <= 1 ? 1 : 0.9 * Math.exp(-1.5 * (fr - 1)), `Farthest point ${fmt(r.far / 1000, 1)} km from base; limit ${fmt(P.walkback / 1000)} km${mode === 'eva' ? ' (how far a crew can walk home if the suit or rover fails)' : ''}.`);
+  add('Slopes over the limit', Math.exp(-badL / 1500), badL > 0 ? `${fmt(badL / 1000, 2)} km steeper than ${P.maxSlope}° (each 1.5 km cuts the chance to about a third). Use Reroute.` : `No section steeper than ${P.maxSlope}°.`);
+  add('Steep but allowed ground', Math.exp(-steepL / (mode === 'eva' ? 30000 : 60000)), `${fmt(steepL / 1000, 2)} km between ${fmt(P.maxSlope / 2)}° and ${P.maxSlope}° (fall / tip-over risk).`);
+  add('Loose sand / dust', Math.exp(-r.loose / 25000), `${fmt(r.loose / 1000, 2)} km over low thermal-inertia ground (THEMIS night IR).`);
+  const dk = mode === 'eva' ? 1 : 0.5;   // a pressurized rover has lights and heating: half the penalty
+  add('Daylight', 1 - dk * (r.s0.el < 0 ? 0.3 : r.minEl < 0 ? 0.4 : r.minEl < 5 ? 0.15 : 0), r.s0.el < 0 ? 'Departs before sunrise.' : r.minEl < 0 ? 'Sun sets before the crew is back.' : r.minEl < 5 ? `Sun drops to ${fmt(r.minEl)}° (dusk).` : `Sun stays above ${fmt(r.minEl)}° (Mars24).`);
+  const lm = r.radio ? r.radio.longest / 60 : 0;
+  add('Radio contact with habitat', Math.exp(-lm / (mode === 'eva' ? 400 : 1200)), lm > 0 ? `Longest blackout about ${fmt(lm)} min (${fmt((1 - r.radio.frac) * 100)}% of the route out of line-of-sight of the ${r.mast} m mast).` : `Line-of-sight to the ${r.mast} m mast the whole way.`);
+  add('Dust-storm season', MarsTime.dustSeason(r.T0.Ls) ? 0.97 : 1, `Ls ${fmt(r.T0.Ls)}°${MarsTime.dustSeason(r.T0.Ls) ? ': inside the main storm season' : ': outside the main storm season'}.`);
+  add('Radiation', Math.exp(-r.dose / 100), `${fmt(r.dose, 3)} mSv for this sortie (MSL/RAD surface baseline, quiet sun).`);
+  if (r.relaxed || S.some(p => p.sat)) add('Terrain data confidence', (r.relaxed ? 0.9 : 1) * (S.some(p => p.sat) ? 0.95 : 1), r.relaxed ? 'No path existed under the slope limit, so it was relaxed.' : 'Terrain above +7.6 km: elevation data saturates.');
+  F.sort((a, b) => a.p - b.p);
+  return { pct: Math.round(100 * F.reduce((a, f) => a * f.p, 1)), factors: F };
+}
 
 // keep fitted content clear of the floating panels
 function mapPadding() {

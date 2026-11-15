@@ -257,7 +257,7 @@ for (const o of OVERLAYS) {
   else if (o.computed === 'grid') overlayLayers[o.id] = gridLayer();
   else if (o.computed === 'ice') overlayLayers[o.id] = iceLayer();
   else if (o.computed === 'ocean') overlayLayers[o.id] = new OceanLayer({ opacity: o.op });
-  else overlayLayers[o.id] = makeTileLayer(o, o.group === 'Imagery' ? { opacity: o.op, pane: 'basePane', zIndex: 10 } : { opacity: o.op });
+  else overlayLayers[o.id] = makeTileLayer(o, o.group === 'Imagery' ? { opacity: o.op, pane: 'basePane', zIndex: 10 } : { opacity: o.op, className: o.id === 'valleys' ? 'valley-tint' : '' });
 }
 
 // ---------------------------------------------------------------------
@@ -883,13 +883,34 @@ const Conditions = (() => {
     $('#hudMtc').textContent = MarsTime.fmtH(t.MTC) + ' MTC';
   }
   // Fetch helper: direct → local proxy (server.py) → null
-  async function getJSON(direct, proxy) {
-    try { const r = await fetch(direct, { mode: 'cors' }); if (r.ok) return await r.json(); } catch (e) {}
-    if (location.protocol.startsWith('http')) { try { const r = await fetch(proxy); if (r.ok) return await r.json(); } catch (e) {} }
-    return null;
+  // Each feed gives up after FEED_TIMEOUT ms; the reason is kept so the user can be told what went wrong.
+  const FEED_TIMEOUT = 12000, feedErr = {};
+  async function fetchT(url, opts = {}) {
+    const ac = new AbortController(), t = setTimeout(() => ac.abort(), FEED_TIMEOUT);
+    try { return await fetch(url, { ...opts, signal: ac.signal }); } finally { clearTimeout(t); }
+  }
+  async function getJSON(direct, proxy, key) {
+    let why = 'no response';
+    try { const r = await fetchT(direct, { mode: 'cors' }); if (r.ok) { delete feedErr[key]; return await r.json(); } why = r.status === 429 ? 'NASA rate limit reached' : 'server error ' + r.status; }
+    catch (e) { why = e.name === 'AbortError' ? 'timed out after ' + FEED_TIMEOUT / 1000 + ' s' : 'network blocked or offline'; }
+    if (location.protocol.startsWith('http')) { try { const r = await fetchT(proxy); if (r.ok) { delete feedErr[key]; return await r.json(); } } catch (e) {} }
+    feedErr[key] = why; return null;
+  }
+  const FEED_NAME = { rems: 'Curiosity weather', swx: 'Space weather', raw: 'Perseverance photos' };
+  const retryBtn = key => `<button class="btn sm" data-retry="${key}" style="margin-top:6px">↻ Try again</button>`;
+  function wireRetry() { $$('[data-retry]').forEach(b => b.onclick = () => { b.disabled = true; b.textContent = 'Retrying…'; ({ rems: weather, swx: spaceWx, raw: rawImages })[b.dataset.retry]().then(notifyFeeds); }); }
+  let lastNote = '';
+  function notifyFeeds() {      // one notification listing every live feed that failed, plus a dot on the Weather tab
+    wireRetry();
+    const bad = Object.keys(feedErr);
+    const tab = $('.tabs button[data-tab=cond]'); if (tab) tab.classList.toggle('alertdot', bad.length > 0);
+    if (!bad.length) { if (lastNote) toast('✓ Live Mars feeds are back.', 3000); lastNote = ''; return; }
+    const msg = bad.map(k => `<b>${FEED_NAME[k]}</b>: ${feedErr[k]}`).join('<br>');
+    if (msg === lastNote) return; lastNote = msg;
+    toast(`⚠ Some live Mars data didn't load:<br>${msg}<br><span class="muted">Showing saved data where possible. Open <b>Weather</b> to try again.</span>`, 9000);
   }
   async function weather() {
-    const j = await getJSON('https://mars.nasa.gov/rss/api/?feed=weather&category=msl&feedtype=json', 'api/rems');
+    const j = await getJSON('https://mars.nasa.gov/rss/api/?feed=weather&category=msl&feedtype=json', 'api/rems', 'rems');
     const live = !!(j && j.soles); const w = live ? j.soles.find(s => s.max_temp !== '--') || j.soles[0] : REMS_SNAPSHOT;
     $('#rems').innerHTML = `<div class="kv">
       <span>Sol / Earth date</span><span>${w.sol} · ${w.terrestrial_date}</span>
@@ -898,19 +919,19 @@ const Conditions = (() => {
       <span>Pressure</span><span>${w.pressure} Pa</span>
       <span>Sky / UV</span><span>${w.atmo_opacity} · UV ${w.local_uv_irradiance_index}</span>
       <span>Sunrise / sunset</span><span>${w.sunrise} / ${w.sunset}</span></div>
-      <p class="note">Curiosity REMS (Centro de Astrobiología / NASA-JPL), Gale crater. ${live ? '<span style="color:var(--ok)">● live</span>' : '● offline snapshot — run <code>python server.py</code> for live data'}</p>`;
+      <p class="note">Curiosity REMS (Centro de Astrobiología / NASA-JPL), Gale crater. ${live ? '<span style="color:var(--ok)">● live</span>' : `<span style="color:var(--warn)">● saved report from ${w.terrestrial_date} — live feed ${feedErr.rems || 'unavailable'}</span><br>${retryBtn('rems')}`}</p>`;
   }
   async function spaceWx() {
     const end = new Date(), st = new Date(end - 7 * 864e5), f = d => d.toISOString().slice(0, 10);
-    const j = await getJSON(`https://api.nasa.gov/DONKI/CME?startDate=${f(st)}&endDate=${f(end)}&api_key=DEMO_KEY`, `api/cme?start=${f(st)}&end=${f(end)}`);
-    if (!Array.isArray(j)) { $('#swx').innerHTML = '<span class="muted small">Space-weather feed unavailable (rate-limited DEMO_KEY?).</span>'; return; }
+    const j = await getJSON(`https://api.nasa.gov/DONKI/CME?startDate=${f(st)}&endDate=${f(end)}&api_key=${NASA_API_KEY}`, `api/cme?start=${f(st)}&end=${f(end)}`, 'swx');
+    if (!Array.isArray(j)) { $('#swx').innerHTML = `<div class="alert warn" style="animation:none">⚠ Space-weather feed: ${feedErr.swx || 'unavailable'}. Solar-storm check skipped: look at <a href="https://kauai.ccmc.gsfc.nasa.gov/DONKI/" target="_blank" rel="noopener">NASA DONKI</a> before a real EVA.</div>${retryBtn('swx')}`; return; }
     let fast = 0; j.forEach(c => (c.cmeAnalyses || []).forEach(a => fast = Math.max(fast, a.speed || 0)));
     const lvl = fast > 1000 ? 'bad' : fast > 600 ? 'warn' : 'ok';
     $('#swx').innerHTML = `<ul class="checks"><li class="${lvl}">${j.length} coronal mass ejections in the last 7 days · fastest ${fmt(fast)} km/s</li><li class="${lvl === 'ok' ? 'ok' : 'warn'}">${lvl === 'ok' ? 'No fast CME — nominal EVA radiation environment' : 'Fast CME observed — check Mars-directed arrival before long EVAs'}</li></ul><p class="note">NASA CCMC DONKI catalogue. Heliospheric events, not all Mars-directed.</p>`;
   }
   async function rawImages() {
-    const j = await getJSON('https://mars.nasa.gov/rss/api/?feed=raw_images&category=mars2020&feedtype=json&num=12&order=sol+desc', 'api/raw');
-    if (!j || !j.images) { $('#raw').innerHTML = '<span class="muted small">Run <code>python server.py</code> to stream the latest Perseverance raw images.</span>'; return; }
+    const j = await getJSON('https://mars.nasa.gov/rss/api/?feed=raw_images&category=mars2020&feedtype=json&num=12&order=sol+desc', 'api/raw', 'raw');
+    if (!j || !j.images) { $('#raw').innerHTML = `<span class="muted small">Latest Perseverance photos didn't load (${feedErr.raw || 'unavailable'}).</span><br>${retryBtn('raw')}`; return; }
     const imgs = j.images.filter(i => i.image_files?.small).slice(0, 9);
     $('#raw').innerHTML = `<div class="thumbs">${imgs.map(i => `<a href="${i.image_files.large || i.image_files.medium}" target="_blank" title="Sol ${i.sol} · ${i.camera?.instrument || ''}" style="background-image:url('${i.image_files.small}')"></a>`).join('')}</div><p class="note">Perseverance, sol ${imgs[0]?.sol ?? '—'} — Jezero crater. NASA/JPL-Caltech.</p>`;
   }
@@ -921,7 +942,7 @@ const Conditions = (() => {
       <h3>Space weather</h3><div class="card" id="swx">Loading…</div>
       <h3>Latest from the surface</h3><div class="card" id="raw">Loading…</div>`;
     clock(); setInterval(clock, 1000); setInterval(renderPoint, 30000);
-    setPoint(pt.lat, pt.lon); weather(); spaceWx(); rawImages();
+    setPoint(pt.lat, pt.lon); Promise.allSettled([weather(), spaceWx(), rawImages()]).then(notifyFeeds);
   }
   return { init, setPoint };
 })();
@@ -1102,7 +1123,7 @@ const Tour = (() => {
   }
   function end() { $('#tour').style.display = 'none'; try { localStorage.setItem('onm_tour_seen', '1'); } catch (e) {} switchTab('plan'); $('#q').focus(); }
   function start() { steps = document.body.classList.contains('ui-simple') && typeof SIMPLE_TOUR !== 'undefined' ? SIMPLE_TOUR : TECH_STEPS; k = 0; show(); }
-  function maybeAuto() { let seen = false; try { seen = localStorage.getItem('onm_tour_seen'); } catch (e) {} if (!seen && !navigator.webdriver && !location.hash) setTimeout(start, 900); }
+  function maybeAuto() { if (!navigator.webdriver) setTimeout(start, 900); }   // the tour opens on every page load (Skip closes it)
   return { start, maybeAuto };
 })();
 
@@ -1138,6 +1159,5 @@ window.addEventListener('DOMContentLoaded', () => {
   $('#btnTour').onclick = () => Tour.start();
   setBase('smart'); buildLayersPane(); Planner.init(); Conditions.init(); initExplore();
   map.fire('zoomend');
-  if (!Planner.loadHash()) { switchTab('plan'); Tour.maybeAuto(); }
-  else switchTab('plan');
+  Planner.loadHash(); switchTab('plan'); Tour.maybeAuto();
 });

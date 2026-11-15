@@ -28,7 +28,10 @@ You need an internet connection because the map tiles stream from NASA, USGS and
   - *Old rivers & water-carved valleys*: Hynek et al. 2010 valley networks, NASA Trek tiles.
   - *Buried ice*: fresh craters that dug up water ice (HiRISE, Dundas et al. 2014) plus 1,309 glacier-like forms (Souness et al. 2012), loaded live from NASA Trek's feature services. If Trek is down, the 22 icy impacts are built in.
   - *Ancient ocean shoreline*: the northern plains below the proposed Deuteronilus ocean level (−3,760 m, Head et al. 1999), computed live from the MOLA elevation tiles.
-- Tutorial: Simple mode has its own 8-step tour; the Technical tour adds the mode switch (12 steps).
+- Tutorial: Simple mode has its own 8-step tour; the Technical tour adds the mode switch (12 steps). The tour opens on every page load (press Skip to close it).
+- **Live-feed notifications:** each live feed (Curiosity weather, NASA space weather, Perseverance photos) gives up after 12 s. A notification then says which feed failed and why (timed out, NASA rate limit, offline), a dot appears on the Weather tab, and each card has a **Try again** button. Saved data is shown where possible.
+- **NASA API key:** paste a free key from https://api.nasa.gov into `NASA_API_KEY` in `data.js`. It raises the space-weather limit from about 30 to 1,000 requests an hour.
+- River valleys are drawn in water-blue.
 
 ## New in version 5
 - **🧊 3D traverse view:** after computing a route, press **🧊 3D view** to walk or drive it in 3D. It has **First-person**, **Chase** and **Orbit** cameras, drag to look around, a height-exaggeration control, play/pause/scrub, and a live O₂/battery, slope, sun and radio HUD. Terrain is MOLA elevation draped with the 200 m HRSC/MOLA shaded relief. It uses Three.js from a CDN and needs no account or install.

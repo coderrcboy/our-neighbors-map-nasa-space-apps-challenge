@@ -365,3 +365,8 @@ body.ui-simple.profile-on #plainHud{display:none}
 .uimode{flex:none}
 #welcome{flex:none}
 @media (max-width:900px){ body.ui-simple #leftPanel{overflow:auto} }
+/* v6: river valleys drawn in water-blue (NASA Trek tiles are cream) */
+.leaflet-tile.valley-tint,.valley-tint{filter:brightness(.6) sepia(1) saturate(10) hue-rotate(175deg)}
+.tabs button.alertdot{position:relative}
+.tabs button.alertdot::after{content:'';position:absolute;top:7px;right:calc(50% - 16px);width:8px;height:8px;border-radius:50%;background:var(--warn);box-shadow:0 0 0 2px var(--panel)}
+#toast .muted{color:#a8b0b9}

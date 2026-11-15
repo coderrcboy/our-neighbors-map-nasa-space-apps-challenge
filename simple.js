@@ -236,7 +236,7 @@ const UI = (() => {
   document.addEventListener('onm:plan', () => {
     updateSteps();
     if (Planner.state.hab && !welcomeOff) hideWelcome();
-    cancelAnimationFrame(planT); planT = requestAnimationFrame(renderPlan);
+    clearTimeout(planT); planT = setTimeout(renderPlan, 0);   // setTimeout (not rAF) so it also updates in a background tab
     if (demoPending && Planner.state.route) { demoPending = false; setTimeout(async () => { const s = Planner.state; await View3D.open(s.route, PROFILES[s.mode], s.hab, s.wps); if (View3D.state === 'open') View3D.play(); }, 600); }
   });
 

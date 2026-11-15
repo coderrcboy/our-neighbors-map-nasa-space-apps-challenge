@@ -28,6 +28,11 @@ const BASEMAPS = [
 ];
 
 // ---------- Overlays (stackable) ----------
+// NASA open-data key for the DONKI space-weather feed.
+// The real key is NOT stored in this repo: GitHub Actions (.github/workflows/pages.yml) swaps the placeholder below for the
+// repository secret NASA_API_KEY when it publishes the site. Opened locally, the placeholder falls back to DEMO_KEY
+// (about 30 requests/hour per network).
+const NASA_API_KEY = (k => /^__.*__$/.test(k) ? 'DEMO_KEY' : k)('__NASA_API_KEY__');
 const TREK_ARC = 'https://trek.nasa.gov/mars/trekarcgis/rest/services/';
 const OVERLAYS = [
   { group:'Water & ice', id:'valleys', name:'Valley networks (Hynek et al. 2010)', desc:'Ancient river valleys mapped from THEMIS + MOLA · NASA Trek', url:TREK_ARC+'Hynek_Valley_Networks/MapServer/WMTS/tile/1.0.0/Hynek_Valley_Networks/default/default028mm/{z}/{y}/{x}.png', maxNative:9, op:.95, attr:ATTR.trek+' · Hynek et al. 2010' },

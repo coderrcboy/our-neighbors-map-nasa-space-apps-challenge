@@ -1098,7 +1098,11 @@ const Sim = (() => {
     stop(); R = route; P = prof; hab = h; paused = false;
     dur = clamp(R.S[R.S.length - 1].d / 1000 * 2.2, 14, 40) * 1000;   // real seconds for the animation
     mk = L.marker([R.S[0].lat, R.S[0].lon], { icon: L.divIcon({ className: '', html: '<div class="astro"></div>', iconSize: [22, 22], iconAnchor: [11, 11] }), zIndexOffset: 2000, interactive: false }).addTo(map);
-    $('#simHud').style.display = 'block'; t0 = performance.now(); raf = requestAnimationFrame(step);
+    const hud = $('#simHud');
+    hud.innerHTML = `<div class="simrow"><b>▶ Traverse simulation</b><span class="sp"></span><button class="btn sm" id="simPause" aria-label="Pause">❚❚</button><button class="btn sm" id="simStop" aria-label="Stop simulation">✕</button></div><div id="simBody"></div>`;
+    $('#simStop').onclick = () => { stop(); Planner.setHover(null); };
+    $('#simPause').onclick = e => { const b = e.currentTarget; if (!raf && !paused) return; if (!paused) { paused = true; pausedAt = performance.now(); cancelAnimationFrame(raf); b.textContent = '▶'; b.setAttribute('aria-label', 'Resume'); } else { paused = false; t0 += performance.now() - pausedAt; b.textContent = '❚❚'; b.setAttribute('aria-label', 'Pause'); raf = requestAnimationFrame(step); } };
+    hud.style.display = 'block'; t0 = performance.now(); raf = requestAnimationFrame(step);
   }
   function step(now) {
     if (paused) return;
@@ -1123,11 +1127,8 @@ const Sim = (() => {
     else if (sun.el < 5) alert = `<div class="alert warn">⚠ LOW SUN (${fmt(sun.el, 0)}°) — head back to the habitat</div>`;
     else alert = `<div class="alert ok">✓ Terrain nominal</div>`;
     if (f >= 1) alert = `<div class="alert ok">✓ Traverse complete — ${R.S[R.S.length - 1].d > 0 && hav(R.S[R.S.length - 1], hab) < 200 ? 'crew back at the habitat' : 'destination reached'}</div>`;
-    $('#simHud').innerHTML = `<div class="simrow"><b>▶ Traverse simulation</b><span class="sp"></span><button class="btn sm" id="simPause" aria-label="${paused ? 'Resume' : 'Pause'}">${paused ? '▶' : '❚❚'}</button><button class="btn sm" id="simStop" aria-label="Stop simulation">✕</button></div>
-      <div class="simrow" style="margin-top:4px"><span><b>${fmt(D / 1000, 2)}</b> / ${fmt(S[S.length - 1].d / 1000, 2)} km</span><span>T+<b>${hh}:${String(mm).padStart(2, '0')}</b></span><span>${res}</span><span>☀ <b>${fmt(sun.el, 0)}°</b></span><span>⛰ <b>${fmt(b.h)}</b> m</span><span>📡 <b style="color:${b.nolos ? RADIO_COL : 'var(--ok)'}">${b.nolos ? 'LOST' : 'OK'}</b></span></div>
+    $('#simBody').innerHTML = `<div class="simrow" style="margin-top:4px"><span><b>${fmt(D / 1000, 2)}</b> / ${fmt(S[S.length - 1].d / 1000, 2)} km</span><span>T+<b>${hh}:${String(mm).padStart(2, '0')}</b></span><span>${res}</span><span>☀ <b>${fmt(sun.el, 0)}°</b></span><span>⛰ <b>${fmt(b.h)}</b> m</span><span>📡 <b style="color:${b.nolos ? RADIO_COL : 'var(--ok)'}">${b.nolos ? 'LOST' : 'OK'}</b></span></div>
       <div class="bar"><i style="width:${f * 100}%;background:var(--blue)"></i></div>${alert}`;
-    $('#simStop').onclick = () => { stop(); Planner.setHover(null); };
-    $('#simPause').onclick = e => { const b = e.currentTarget; if (!paused) { paused = true; pausedAt = performance.now(); b.textContent = '▶'; b.setAttribute('aria-label', 'Resume'); } else { paused = false; t0 += performance.now() - pausedAt; b.textContent = '❚❚'; b.setAttribute('aria-label', 'Pause'); raf = requestAnimationFrame(step); } };
     if (f < 1) raf = requestAnimationFrame(step); else { raf = 0; setTimeout(() => Planner.setHover(null), 1500); }
   }
   return { start, stop, get running() { return !!raf; } };

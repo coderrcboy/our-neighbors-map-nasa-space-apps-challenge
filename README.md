@@ -14,6 +14,13 @@ Option B is quick: double-click `index.html`. Everything works this way too (ver
 
 You need an internet connection because the map tiles stream from NASA, USGS and Caltech servers.
 
+## New in version 5
+- **🧊 3D traverse view:** after computing a route, press **🧊 3D view** to walk or drive it in 3D. It has **First-person**, **Chase** and **Orbit** cameras, drag to look around, a height-exaggeration control, play/pause/scrub, and a live O₂/battery, slope, sun and radio HUD. Terrain is MOLA elevation draped with the 200 m HRSC/MOLA shaded relief. It uses Three.js from a CDN and needs no account or install.
+- **📡 Radio line-of-sight:** every route point is checked for a clear radio path to the habitat mast, over terrain and the curve of Mars. Blackout stretches glow purple on the map and the profile, and add a GO/NO-GO checklist item, a 📡 marker and a simulation alert. **Habitat radio mast height** is editable under ⚙ settings (default 10 m). A blackout longer than 15 min on foot is a NO-GO.
+- **📏 Measure tool:** the ruler button on the map (bottom right). Click points to see each leg, the total distance (great-circle) and the elevation at each point. It has Undo, Clear and Done; **Esc** also finishes.
+- **Tutorial updated** (11 steps) with radio, 3D view and measuring.
+- Fix: the ⚙ settings card now switches to rover fields when a rover preset is loaded.
+
 ## New in version 4
 - **Google-Maps-style layout:** full-screen map, search panel on the left, modes on the right (collapsible). On phones the modes become a bottom sheet.
 - **Search → base card → Start:** search any base, read what it is (elevation, ground, daylight), press **▶ Start mission here**.
@@ -42,7 +49,8 @@ NASA Mars Trek (JPL) · MGS MOLA & TES · Mars Odyssey THEMIS (ASU) · MRO CTX (
 
 ## Honest limits
 - Elevation comes from 8-bit MOLA tiles calibrated against landing-site elevations (RMS ≈ 70 m, saturating above +7.6 km). Route slopes are at MOLA scale (~1.3 km), so boulder-scale hazards still need a look at HiRISE imagery.
+- Radio line-of-sight uses the same MOLA tiles. Because they are 8-bit (~58 m height steps), terrain must stand ~35 m above the radio path to count as a blocker, so it catches hills, crater rims and canyon walls, not small mounds. The 3D view uses the same ~460 m terrain; its look is a guide, not a photo.
 - The physiology, rover and radiation models are first-order planning aids, not flight-certified.
 
 ## Files
-`index.html` is the page (loads the Leaflet map library from a CDN, so no `lib` folder is needed) · `app.js` holds the map, planner and UI · `mars.js` is Mars24 time and sun · `data.js` is the layer registry, presets and gazetteer · `server.py` is an optional local server and live-data proxy
+`index.html` is the page (loads the Leaflet map library from a CDN, so no `lib` folder is needed) · `app.js` holds the map, planner and UI · `extras.js` holds the 3D view and the measure tool · `mars.js` is Mars24 time and sun · `data.js` is the layer registry, presets and gazetteer · `server.py` is an optional local server and live-data proxy

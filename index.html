@@ -39,7 +39,8 @@
 
   <div class="hud float" id="hud">
     <span>⌖ <b id="hudLL">—</b></span>
-    <span>⛰ <b id="hudEl">—</b></span>
+    <span title="Elevation under the cursor (MOLA)">⛰ <b id="hudEl">—</b></span>
+    <span id="hudDistW" style="display:none" title="Distance from your habitat">↔ <b id="hudDist">—</b> from base</span>
     <span>☀ <b id="hudLt">—</b></span>
     <span>🔍 <b id="hudRes">—</b></span>
     <span class="k" id="hudLs">—</span>
@@ -67,5 +68,6 @@ window.addEventListener('error', e => { const d = document.createElement('div');
 <script src="data.js"></script>
 <script src="mars.js"></script>
 <script src="app.js"></script>
+<script src="extras.js"></script>
 </body>
 </html>

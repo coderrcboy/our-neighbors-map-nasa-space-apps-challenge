@@ -192,7 +192,7 @@ function sitesLayer() {
   const g = L.layerGroup();
   for (const s of SITES) {
     const m = L.marker([s.lat, s.lon], { icon: L.divIcon({ className: '', html: `<div class="pin site"></div><div class="pinlbl" style="font-weight:500;font-size:10.5px;left:13px;top:-4px">${s.n.split(' (')[0]}</div>`, iconSize: [10, 10], iconAnchor: [5, 5] }) });
-    m.on('click', e => { L.DomEvent.stopPropagation(e); Place.show({ n: s.n, type: `Landing site · ${s.y}`, lat: s.lat, lon: s.lon, desc: s.d }); });
+    m.on('click', e => { if (typeof Measure !== 'undefined' && Measure.active) return; L.DomEvent.stopPropagation(e); Place.show({ n: s.n, type: `Landing site · ${s.y}`, lat: s.lat, lon: s.lon, desc: s.d }); });
     g.addLayer(m);
   }
   return g;
@@ -244,8 +244,8 @@ function toggleOverlay(id, on) {
 //  EVA / traverse planner
 // ---------------------------------------------------------------------
 const PROFILES = {
-  eva: { label: 'Suited EVA (on foot)', maxSlope: 15, crew: 75, load: 60, o2: 0.90, battH: 8, walkback: 10000, speedFlat: 3.0 },
-  rover: { label: 'Pressurized rover', maxSlope: 25, mass: 3000, crr: 0.12, eff: 0.7, battKWh: 70, speed: 10, walkback: 50000 },
+  eva: { label: 'Suited EVA (on foot)', maxSlope: 15, crew: 75, load: 60, o2: 0.90, battH: 8, walkback: 10000, speedFlat: 3.0, mast: 10, ant: 1.8 },
+  rover: { label: 'Pressurized rover', maxSlope: 25, mass: 3000, crr: 0.12, eff: 0.7, battKWh: 70, speed: 10, walkback: 50000, mast: 10, ant: 3 },
 };
 const PROFILE_DEFAULTS = JSON.parse(JSON.stringify(PROFILES));
 const Planner = (() => {
@@ -273,6 +273,7 @@ const Planner = (() => {
     map.getContainer().style.cursor = st.click ? 'crosshair' : '';
   }
   map.on('click', e => {
+    if (typeof Measure !== 'undefined' && Measure.active) return;
     if (!st.click) { Conditions.setPoint(e.latlng.lat, e.latlng.lng); Place.show({ n: 'Dropped pin', type: 'Selected location', lat: e.latlng.lat, lon: e.latlng.lng }, false); return; }
     const { lat, lng } = e.latlng;
     if (st.click === 'hab') { st.hab = { n: 'Habitat', lat, lon: lng }; setClick(null); }
@@ -427,6 +428,8 @@ const Planner = (() => {
         b.tc = t + dw; b.ec = E + workW * dw; b.kc = kwh;      // cumulative, used by the traverse simulation
       }
       for (let i = 1; i < S.length; i++) if (S[i].tc == null) { S[i].tc = S[i - 1].tc; S[i].ec = S[i - 1].ec; S[i].kc = S[i - 1].kc; }
+      // radio line-of-sight from the habitat mast to the crew antenna (terrain + Mars curvature)
+      const radio = await radioLOS(S, st.hab, P);
       let dwellS = 0; st.wps.forEach(w => { dwellS += (w.dwell || 0) * 60; });
       const evaE = E + workW * dwellS;
       const totalS = t + dwellS;
@@ -444,16 +447,35 @@ const Planner = (() => {
       let far = 0, farIdx = 0; S.forEach((p, i) => { const d = hav(p, st.hab); if (d > far) { far = d; farIdx = i; } });
       const T0 = MarsTime.at(start);
       if (token !== st.token) return;     // a newer plan was started meanwhile
-      st.route = { S, legs, t, totalS, dwellS, E: evaE, o2, roverEvaO2, kwh, asc, desc, maxSl, loose, subgrid, relaxed, start, s0, s1, minEl, dose, radRate, far, farIdx, hMean, T0, arrive, mode: st.mode };
+      st.route = { S, legs, t, totalS, dwellS, E: evaE, o2, roverEvaO2, kwh, asc, desc, maxSl, loose, subgrid, relaxed, start, s0, s1, minEl, dose, radRate, far, farIdx, hMean, T0, arrive, mode: st.mode, radio, mast: P.mast };
       drawRoute(); renderTelemetry(); Profile.draw(st.route);
       saveHash();
     } finally { $('#btnPlan').disabled = false; $('#btnPlan').textContent = 'Compute safe route'; }
+  }
+
+  async function radioLOS(S, hab, P) {
+    let s0 = hab.lat, n0 = hab.lat, w0 = hab.lon, e0 = hab.lon;
+    S.forEach(q => { const lo = q.lon + 360 * Math.round((hab.lon - q.lon) / 360); s0 = Math.min(s0, q.lat); n0 = Math.max(n0, q.lat); w0 = Math.min(w0, lo); e0 = Math.max(e0, lo); });
+    await dem.ensure(DEM.maxZ, s0 - .02, w0 - .02, n0 + .02, e0 + .02).catch(() => {});
+    const hh = elev(hab.lat, hab.lon), ha = (isNaN(hh) ? 0 : hh) + P.mast;
+    let lost = 0, longest = 0, runT = 0, cover = 0;
+    for (let i = 0; i < S.length; i++) {
+      const q = S[i], gq = isNaN(q.h) ? hh : q.h, ok = losClear(hab, ha, q, gq + P.ant, isNaN(hh) ? 0 : hh, gq);
+      q.nolos = !ok;
+      if (i) { const ds = q.d - S[i - 1].d, dt = (q.tc || 0) - (S[i - 1].tc || 0); if (!ok) { lost += ds; runT += dt; longest = Math.max(longest, runT); } else { runT = 0; cover += ds; } }
+    }
+    const D = S[S.length - 1].d || 1;
+    return { lost, longest, frac: 1 - lost / D, mast: P.mast };
   }
 
   function drawRoute() {
     routeLay.clearLayers(); const S = st.route.S, P = PROFILES[st.mode];
     // blinking hazard markers at the middle of each loose-sand / danger stretch
     const runs = (test) => { const out = []; let a = -1; for (let i = 1; i <= S.length; i++) { const on = i < S.length && test(S[i]); if (on && a < 0) a = i; if (!on && a >= 0) { out.push([a, i - 1]); a = -1; } } return out; };
+    // radio blackout halo (no line-of-sight to the habitat mast)
+    for (let i = 1; i < S.length; i++) if (S[i].nolos && Math.abs(S[i].lon - S[i - 1].lon) <= 180) routeLay.addLayer(L.polyline([[S[i - 1].lat, S[i - 1].lon], [S[i].lat, S[i].lon]], { color: RADIO_COL, weight: 14, opacity: .45, interactive: false }));
+    for (const [a, b] of runs(p => p.nolos)) { const m = S[(a + b) >> 1], km = (S[b].d - S[a - 1].d) / 1000, min = ((S[b].tc || 0) - (S[a - 1].tc || 0)) / 60;
+      routeLay.addLayer(L.marker([m.lat, m.lon], { icon: L.divIcon({ className: '', html: '<div class="hz radio">📡</div>', iconSize: [26, 26], iconAnchor: [13, 13] }), zIndexOffset: 450 }).bindTooltip(`📡 Radio blackout · ${fmt(km, 2)} km · ~${fmt(min)} min without line-of-sight to the habitat mast`)); }
     for (const [a, b] of runs(p => p.loose)) { const m = S[(a + b) >> 1], km = (S[b].d - S[a - 1].d) / 1000;
       routeLay.addLayer(L.marker([m.lat, m.lon], { icon: L.divIcon({ className: '', html: '<div class="hz sand">!</div>', iconSize: [26, 26], iconAnchor: [13, 13] }), zIndexOffset: 500 }).bindTooltip(`⚠ Loose sand · ${fmt(km, 2)} km — slow down, test footing`)); }
     for (const [a, b] of runs(p => p.slope > P.maxSlope)) { const m = S[(a + b) >> 1];
@@ -499,14 +521,18 @@ const Planner = (() => {
     else add('ok', `Daylight throughout (sun ≥ ${fmt(r.minEl, 0)}° elevation)`);
     if (MarsTime.dustSeason(r.T0.Ls)) add('warn', `Dust-storm season (Ls ${fmt(r.T0.Ls, 0)}°) — monitor opacity before departure`);
     else add('ok', `Outside main dust-storm season (Ls ${fmt(r.T0.Ls, 0)}°)`);
+    { const rd = r.radio, mins = rd.longest / 60;
+      if (rd.lost <= 0) add('ok', `Radio line-of-sight to the habitat along the whole route (${r.mast} m mast)`);
+      else if (st.mode === 'eva') add(mins > 15 ? 'bad' : 'warn', `Radio blackout on ${fmt(rd.lost / 1000, 2)} km (longest ~${fmt(mins)} min) — terrain blocks the ${r.mast} m habitat mast; raise the mast, add a relay or use orbiter relay`);
+      else add('warn', `Radio blackout on ${fmt(rd.lost / 1000, 1)} km (longest ~${fmt(mins)} min) — rely on orbiter relay or a deployable repeater`); }
     add(r.dose < 0.5 ? 'ok' : 'warn', `Radiation ≈ ${fmt(r.dose, 3)} mSv for this sortie (no solar particle event)`);
     const worst = checks.some(c => c[0] === 'bad') ? 'nogo' : checks.some(c => c[0] === 'warn') ? 'caution' : 'go';
     const label = { go: 'GO', caution: 'GO — WITH CAUTIONS', nogo: 'NO-GO' }[worst];
     const endT = new Date(r.start.getTime() + r.totalS * 1000);
     const nBad = r.S.filter(p => hazard(p, P) === 'bad').length, nWarn = r.S.filter(p => hazard(p, P) === 'warn').length;
     let h = `<div class="status ${worst}">● ${label}</div>
-    <div class="route-legend"><span><i style="background:${HZ_COL.ok}"></i>safe</span><span><i style="background:${HZ_COL.warn}"></i>look out (${nWarn})</span><span><i style="background:${HZ_COL.bad}"></i>danger (${nBad})</span><span>⚠ blinking = loose sand</span></div>
-    <div class="route-actions"><button class="btn pri sm" id="btnSim">▶ Simulate traverse</button>${nBad || r.relaxed ? '<button class="btn sm" id="btnReroute" style="border-color:var(--bad);color:#ff8080">↻ Reroute around danger</button>' : ''}</div>
+    <div class="route-legend"><span><i style="background:${HZ_COL.ok}"></i>safe</span><span><i style="background:${HZ_COL.warn}"></i>look out (${nWarn})</span><span><i style="background:${HZ_COL.bad}"></i>danger (${nBad})</span><span>⚠ blinking = loose sand</span><span><i style="background:${RADIO_COL}"></i>no radio</span></div>
+    <div class="route-actions"><button class="btn pri sm" id="btnSim">▶ Simulate traverse</button><button class="btn sm" id="btn3D" title="Fly the route in 3D: first-person, chase or orbit camera">🧊 3D view</button>${nBad || r.relaxed ? '<button class="btn sm" id="btnReroute" style="border-color:var(--bad);color:#ff8080">↻ Reroute around danger</button>' : ''}</div>
     <div class="card" style="margin-top:8px"><div class="kv">
       <span>Route length</span><span>${fmt(r.S[r.S.length - 1].d / 1000, 2)} km</span>
       <span>Ascent / descent</span><span>+${fmt(r.asc)} / −${fmt(r.desc)} m</span>
@@ -517,7 +543,8 @@ const Planner = (() => {
       <span>Total sortie</span><span>${fmt(r.totalS / 3600, 2)} h</span>`;
     if (st.mode === 'eva') h += `<span>Metabolic energy</span><span>${fmt(r.E / 1e6, 2)} MJ</span><span>Avg metabolic rate</span><span>${fmt(r.E / r.totalS)} W</span><span>Oxygen consumed</span><span>${fmt(r.o2, 3)} kg</span>`;
     else h += `<span>Drive energy</span><span>${fmt(r.kwh, 1)} kWh</span><span>Suit O₂ at stops</span><span>${fmt(r.roverEvaO2, 3)} kg/crew</span>`;
-    h += `<span>Radiation dose</span><span>${fmt(r.dose, 3)} mSv</span>
+    h += `<span>Radio coverage</span><span>${fmt(r.radio.frac * 100)}% of route</span>
+      <span>Radiation dose</span><span>${fmt(r.dose, 3)} mSv</span>
       <span>Pressure (mean alt.)</span><span>${fmt(pressure(r.hMean))} Pa</span>
     </div></div>`;
     if (st.mode === 'eva') {
@@ -535,9 +562,10 @@ const Planner = (() => {
     <h3>Go / No-Go checklist</h3><ul class="checks">${checks.map(([l, m]) => `<li class="${l}">${m}</li>`).join('')}</ul>
     <h3>Science objectives</h3><ul class="checks">${st.wps.map((w, i) => `<li class="ok"><b>${i + 1}. ${w.n}</b> — ${w.task} (${w.dwell} min)${sciNote(w)}</li>`).join('')}</ul>
     <div class="row" style="margin-top:10px"><button class="btn sm" id="btnGeo">Download GeoJSON</button><button class="btn sm" id="btnBrief">Mission brief</button><button class="btn sm" id="btnLink">Copy link</button></div>
-    <p class="note">Models: walking speed — Tobler hiking function ×0.6 suited penalty; metabolic cost — Pandolf (1977) load-carriage equation with weight terms scaled to 0.38 g; O₂ — 20.1 kJ per litre; terrain — MOLA DEM (463 m) for elevation + HRSC/MOLA 200 m shaded relief for local steepness (craters, scarps) + THEMIS night-IR thermal inertia; sun — Mars24 (Allison &amp; McEwen 2000); radiation — MSL/RAD surface baseline (Hassler et al. 2014). Planning aid, not flight-certified.</p>`;
+    <p class="note">Models: walking speed — Tobler hiking function ×0.6 suited penalty; metabolic cost — Pandolf (1977) load-carriage equation with weight terms scaled to 0.38 g; O₂ — 20.1 kJ per litre; radio — line-of-sight from habitat mast to crew antenna over MOLA terrain with Mars curvature; terrain — MOLA DEM (463 m) for elevation + HRSC/MOLA 200 m shaded relief for local steepness (craters, scarps) + THEMIS night-IR thermal inertia; sun — Mars24 (Allison &amp; McEwen 2000); radiation — MSL/RAD surface baseline (Hassler et al. 2014). Planning aid, not flight-certified.</p>`;
     $('#telemetry').innerHTML = h;
     $('#btnSim').onclick = () => Sim.start(st.route, PROFILES[st.mode], st.hab);
+    $('#btn3D').onclick = () => View3D.open(st.route, PROFILES[st.mode], st.hab, st.wps);
     if ($('#btnReroute')) $('#btnReroute').onclick = async () => { st.strict = true; await compute(); st.strict = false; const P2 = PROFILES[st.mode]; toast(st.route && st.route.S.some(p => hazard(p, P2) === 'bad') ? '⚠ No fully safe path exists at this resolution — red sections remain; consider moving the waypoint.' : '✓ Rerouted: route now avoids danger zones.', 5000); };
     $('#btnGeo').onclick = exportGeo; $('#btnBrief').onclick = brief; $('#btnLink').onclick = () => { saveHash(); navigator.clipboard?.writeText(location.href); toast('Link to this plan copied'); };
   }
@@ -577,7 +605,7 @@ const Planner = (() => {
       return true;
     } catch (e) { return false; }
   }
-  function syncUI() { $('#mode').value = st.mode; $('#retHome').checked = st.returnHome; renderList(); }
+  function syncUI() { $('#mode').value = st.mode; $('#retHome').checked = st.returnHome; renderList(); renderSettings(); }
   function loadPreset(id) {
     const p = PRESETS.find(x => x.id === id); if (!p) return;
     st.mode = p.mode; st.returnHome = p.ret !== false; st.hab = { ...p.hab }; st.wps = p.wps.map(w => ({ ...w })); st.start = null; $('#start').value = '';
@@ -596,8 +624,9 @@ const Planner = (() => {
         <div class="row"><select id="mode"><option value="eva">${PROFILES.eva.label}</option><option value="rover">${PROFILES.rover.label}</option></select></div>
         <div class="row"><span class="muted small">Slope limit <b id="maxSlope"></b></span><span class="sp"></span><label class="small"><input type="checkbox" id="retHome" checked> Return to habitat</label></div>
         <div class="row"><span class="muted small" style="white-space:nowrap">Depart (UTC)</span><input type="datetime-local" id="start"><button class="btn sm" id="btnMorning" title="Next 09:00 local solar time at the habitat">09:00 LTST</button></div>
-        <details id="suitBox" style="margin-top:8px"><summary class="small" style="cursor:pointer;color:var(--mars2)">⚙ Suit, crew &amp; vehicle settings</summary><div id="suitFields" class="kvin"></div></details>
       </div>
+      <h3 id="suitHead">⚙ Suit, crew &amp; resources</h3>
+      <div class="card settings" id="suitFields"></div>
       <h3>Preset missions</h3>
       <div class="grid2">${PRESETS.map(p => `<button class="btn sm" data-preset="${p.id}">${p.name}</button>`).join('')}</div>
       <h3>Habitat & science waypoints</h3>
@@ -617,13 +646,14 @@ const Planner = (() => {
   }
   // editable consumables & limits (defaults are typical planning values)
   const SETTINGS = {
-    eva: [['o2', 'Usable O₂ in suit', 'kg', 0.2, 5, 0.05], ['battH', 'Suit battery life', 'h', 1, 24, 0.5], ['maxSlope', 'Max walkable slope', '°', 5, 35, 1], ['crew', 'Astronaut mass', 'kg', 40, 130, 1], ['load', 'Suit + backpack mass', 'kg', 10, 150, 1], ['walkback', 'Walk-back limit', 'km', 1, 50, 0.5, 1000]],
-    rover: [['battKWh', 'Rover battery', 'kWh', 5, 500, 5], ['maxSlope', 'Max drivable slope', '°', 5, 40, 1], ['mass', 'Rover mass', 'kg', 300, 15000, 50], ['speed', 'Cruise speed', 'km/h', 1, 30, 0.5], ['walkback', 'Rescue range', 'km', 5, 300, 5, 1000]],
+    eva: [['o2', 'Usable O₂ in suit', 'kg', 0.2, 5, 0.05], ['battH', 'Suit battery life', 'h', 1, 24, 0.5], ['maxSlope', 'Max walkable slope', '°', 5, 35, 1], ['crew', 'Astronaut mass', 'kg', 40, 130, 1], ['load', 'Suit + backpack mass', 'kg', 10, 150, 1], ['walkback', 'Walk-back limit', 'km', 1, 50, 0.5, 1000], ['mast', 'Habitat radio mast height', 'm', 1, 100, 1]],
+    rover: [['battKWh', 'Rover battery', 'kWh', 5, 500, 5], ['maxSlope', 'Max drivable slope', '°', 5, 40, 1], ['mass', 'Rover mass', 'kg', 300, 15000, 50], ['speed', 'Cruise speed', 'km/h', 1, 30, 0.5], ['walkback', 'Rescue range', 'km', 5, 300, 5, 1000], ['mast', 'Habitat radio mast height', 'm', 1, 100, 1]],
   };
   function renderSettings() {
     const P = PROFILES[st.mode];
-    $('#suitFields').innerHTML = SETTINGS[st.mode].map(([k, lab, u, mn, mx, stp, sc = 1]) => `<label class="row small" style="margin-top:6px"><span style="flex:1">${lab}</span><input type="number" data-set="${k}" min="${mn}" max="${mx}" step="${stp}" value="${+(P[k] / sc).toFixed(3)}" style="width:86px"><span class="muted" style="width:34px">${u}</span></label>`).join('') +
-      `<div class="row" style="margin-top:6px"><button class="btn sm" id="setReset">Reset defaults</button><span class="note" style="margin:0">Changes apply to the next <b>Compute</b>.</span></div>`;
+    $('#suitHead').textContent = st.mode === 'eva' ? '⚙ Suit, crew & resources' : '⚙ Rover & resources';
+    $('#suitFields').innerHTML = SETTINGS[st.mode].map(([k, lab, u, mn, mx, stp, sc = 1]) => `<label class="setrow"><span>${lab}</span><input type="number" data-set="${k}" min="${mn}" max="${mx}" step="${stp}" value="${+(P[k] / sc).toFixed(3)}"><em>${u}</em></label>`).join('') +
+      `<div class="row" style="margin-top:8px"><button class="btn sm" id="setReset">↺ Reset defaults</button><span class="note" style="margin:0">Edits re-run the route automatically.</span></div>`;
     $$('[data-set]').forEach(inp => inp.onchange = () => {
       const def = SETTINGS[st.mode].find(d => d[0] === inp.dataset.set), sc = def[6] || 1;
       const v = clamp(+inp.value || def[3], def[3], def[4]); inp.value = v; P[def[0]] = v * sc;
@@ -644,6 +674,22 @@ function mapPadding() {
 }
 // route hazard class: green = safe, yellow = look out (steeper than half the limit, or loose sand), red = danger (over the limit)
 const HZ_COL = { ok: '#3ccf8e', warn: '#f2b636', bad: '#ff4d4d' };
+const RADIO_COL = '#b06cff';
+// true when a straight radio path from the habitat antenna (altitude ha, ground ga) to point q (antenna altitude hb, ground gb)
+// clears the terrain and the curve of Mars. The MOLA tiles are 8-bit (≈58 m height steps), so terrain must poke above the ray by
+// more than ~half a step to count as a blocker; curvature is checked separately against a smooth sphere through the lower ground point.
+function losClear(a, ha, q, hb, ga = ha, gb = hb) {
+  const b = { lat: q.lat, lon: q.lon + 360 * Math.round((a.lon - q.lon) / 360) };
+  const d = hav(a, b); if (d < 60) return true;
+  const n = Math.min(200, Math.max(4, Math.ceil(d / 230))), tol = 0.6 * DEM.b, g0 = Math.min(ga, gb);
+  for (let k = 1; k < n; k++) {
+    const f = k / n, d1 = d * f, bulge = d1 * (d - d1) / (2 * R_MARS), ray = ha + (hb - ha) * f;
+    if (g0 + bulge > ray) return false;                                   // smooth-Mars radio horizon
+    const h = elev(a.lat + (b.lat - a.lat) * f, a.lon + (b.lon - a.lon) * f); if (isNaN(h)) continue;
+    if (h - tol + bulge > ray) return false;                              // terrain (hill, crater rim, canyon wall)
+  }
+  return true;
+}
 function hazard(p, P) { return p.slope > P.maxSlope ? 'bad' : (p.loose || p.slope > P.maxSlope * 0.5) ? 'warn' : 'ok'; }
 function nearestName(lat, lon) {
   let best = null; for (const [n, , la, lo] of GAZ) { const d = hav({ lat, lon }, { lat: la, lon: lo }); if (!best || d < best.d) best = { n, d }; }
@@ -675,15 +721,16 @@ const Profile = (() => {
     g.beginPath(); g.moveTo(X(0), Y(lo)); S.forEach(p => g.lineTo(X(p.d), Y(isNaN(p.h) ? lo : p.h))); g.lineTo(X(D), Y(lo)); g.closePath();
     const grd = g.createLinearGradient(0, T0, 0, H); grd.addColorStop(0, '#e0603a55'); grd.addColorStop(1, '#e0603a05'); g.fillStyle = grd; g.fill();
     const P = PROFILES[R.mode];
+    g.fillStyle = RADIO_COL + '30'; for (let i = 1; i < S.length; i++) if (S[i].nolos) g.fillRect(X(S[i - 1].d), T0, Math.max(1, X(S[i].d) - X(S[i - 1].d)), H - T0 - B0);
     for (let i = 1; i < S.length; i++) { g.strokeStyle = HZ_COL[hazard(S[i], P)]; g.lineWidth = 2.2; g.beginPath(); g.moveTo(X(S[i - 1].d), Y(S[i - 1].h)); g.lineTo(X(S[i].d), Y(S[i].h)); g.stroke(); }
     // waypoint ticks
     let lastLeg = 0; g.fillStyle = '#fff';
     S.forEach((p, i) => { if (i && p.leg !== lastLeg) { const x = X(S[i - 1].d); g.strokeStyle = '#ffffff55'; g.setLineDash([3, 3]); g.beginPath(); g.moveTo(x, T0); g.lineTo(x, H - B0); g.stroke(); g.setLineDash([]); g.fillText(`◆${lastLeg + 1}`, x + 3, T0 + 10); lastLeg = p.leg; } });
-    g.fillStyle = '#e7e2db'; g.font = '600 11px system-ui'; g.fillText('Elevation profile (MOLA)  ·  green safe  ·  yellow look out (steep / loose sand)  ·  red danger', L0, 12);
+    g.fillStyle = '#e7e2db'; g.font = '600 11px system-ui'; g.fillText('Elevation profile (MOLA)  ·  green safe  ·  yellow look out (steep / loose sand)  ·  red danger  ·  purple band = no radio to habitat', L0, 12);
     if (hx != null && typeof hx === 'number') {
       const d = clamp((hx - L0) / (W - L0 - R0), 0, 1) * D; let i = S.findIndex(p => p.d >= d); if (i < 0) i = S.length - 1; const p = S[i];
       g.strokeStyle = '#fff'; g.beginPath(); g.moveTo(X(p.d), T0); g.lineTo(X(p.d), H - B0); g.stroke();
-      const txt = `${fmt(p.d / 1000, 2)} km · ${fmt(p.h)} m · ${fmt(p.slope, 1)}°${p.loose ? ' · loose' : ''}`; g.font = '11px ui-monospace,monospace';
+      const txt = `${fmt(p.d / 1000, 2)} km · ${fmt(p.h)} m · ${fmt(p.slope, 1)}°${p.loose ? ' · loose' : ''}${p.nolos ? ' · no radio' : ''}`; g.font = '11px ui-monospace,monospace';
       const tw = g.measureText(txt).width + 12, tx = clamp(X(p.d) + 8, L0, W - tw - 4); g.fillStyle = '#000c'; g.fillRect(tx, T0 + 16, tw, 20); g.fillStyle = '#fff'; g.fillText(txt, tx + 6, T0 + 30);
       Planner.setHover(p);
     }
@@ -907,13 +954,14 @@ const Sim = (() => {
     else { const bat = 1 - (a.kc + (b.kc - a.kc) * u) / P.battKWh; res = `Battery <b>${fmt(Math.max(0, bat) * 100)}%</b>`; }
     let alert;
     if (hz === 'bad') alert = `<div class="alert bad">⛔ DANGER — slope ${fmt(b.slope, 1)}° exceeds the ${P.maxSlope}° limit. Stop and reroute!</div>`;
+    else if (b.nolos) alert = `<div class="alert radio">📡 RADIO BLACKOUT — no line-of-sight to the habitat. Follow the timeline, check in when back in view</div>`;
     else if (b.loose) alert = `<div class="alert warn">⚠ LOOSE SAND — reduce speed, test footing, avoid stopping in soft ground</div>`;
     else if (hz === 'warn') alert = `<div class="alert warn">⚠ LOOK OUT — steep ground (${fmt(b.slope, 1)}°), slow down</div>`;
     else if (sun.el < 5) alert = `<div class="alert warn">⚠ LOW SUN (${fmt(sun.el, 0)}°) — head back to the habitat</div>`;
     else alert = `<div class="alert ok">✓ Terrain nominal</div>`;
     if (f >= 1) alert = `<div class="alert ok">✓ Traverse complete — ${R.S[R.S.length - 1].d > 0 && hav(R.S[R.S.length - 1], hab) < 200 ? 'crew back at the habitat' : 'destination reached'}</div>`;
     $('#simHud').innerHTML = `<div class="simrow"><b>▶ Traverse simulation</b><span class="sp"></span><button class="btn sm" id="simPause">${paused ? '▶' : '❚❚'}</button><button class="btn sm" id="simStop">✕</button></div>
-      <div class="simrow" style="margin-top:4px"><span><b>${fmt(D / 1000, 2)}</b> / ${fmt(S[S.length - 1].d / 1000, 2)} km</span><span>T+<b>${hh}:${String(mm).padStart(2, '0')}</b></span><span>${res}</span><span>☀ <b>${fmt(sun.el, 0)}°</b></span><span>⛰ <b>${fmt(b.h)}</b> m</span></div>
+      <div class="simrow" style="margin-top:4px"><span><b>${fmt(D / 1000, 2)}</b> / ${fmt(S[S.length - 1].d / 1000, 2)} km</span><span>T+<b>${hh}:${String(mm).padStart(2, '0')}</b></span><span>${res}</span><span>☀ <b>${fmt(sun.el, 0)}°</b></span><span>⛰ <b>${fmt(b.h)}</b> m</span><span>📡 <b style="color:${b.nolos ? RADIO_COL : 'var(--ok)'}">${b.nolos ? 'LOST' : 'OK'}</b></span></div>
       <div class="bar"><i style="width:${f * 100}%;background:var(--blue)"></i></div>${alert}`;
     $('#simStop').onclick = () => { stop(); Planner.setHover(null); };
     $('#simPause').onclick = () => { if (!paused) { paused = true; pausedAt = performance.now(); } else { paused = false; t0 += performance.now() - pausedAt; raf = requestAnimationFrame(step); } };
@@ -927,13 +975,16 @@ const Sim = (() => {
 // ---------------------------------------------------------------------
 const Tour = (() => {
   const steps = [
-    { sel: null, t: 'Welcome to Our Neighbor\'s Map', b: 'A mission planner for the first astronauts on Mars. It combines NASA, ESA, USGS and Caltech data so you can plan a safe Marswalk anywhere on the planet. This 1-minute tour shows you how.' },
+    { sel: null, t: 'Welcome to Our Neighbor\'s Map', b: 'A mission planner for the first astronauts on Mars. It combines NASA, ESA, USGS and Caltech data so you can plan a safe Marswalk anywhere on the planet. This short tour shows you how.' },
     { sel: '.searchbox', t: '1 · Search for a base', b: 'Type a place — try <b>Jezero</b>, <b>Gale</b> or <b>Olympus Mons</b> — or coordinates like <b>18.4N 77.5E</b>. You can also just click anywhere on the map.' },
     { sel: '#leftPanel', t: '2 · Read about it, then press Start', b: 'A card describes the place: what it is, elevation, ground type and daylight. Press <b>▶ Start mission here</b> to put your habitat there.' },
     { sel: '#rightPanel', t: '3 · Add stops & compute', b: 'After Start, click the map to add science stops, then press <b>Compute safe route</b>. In a hurry? Use one of the one-click <b>Preset missions</b>.', tab: 'plan' },
     { sel: '#map', t: '4 · Read the route colours', b: '<span style="color:#3ccf8e">Green</span> = safe · <span style="color:#f2b636">Yellow</span> = look out (steep or loose sand) · <span style="color:#ff4d4d">Red</span> = danger. Blinking ⚠ marks loose sand. If you see red, press <b>↻ Reroute around danger</b>.' },
-    { sel: '#rightPanel', t: '5 · GO / NO-GO and simulation', b: 'The panel shows oxygen, battery, daylight, radiation and a <b>GO / NO-GO</b> verdict. Press <b>▶ Simulate traverse</b> to watch the astronaut walk it, with live hazard warnings.', tab: 'plan' },
-    { sel: '.tabs', t: '6 · More modes', b: '<b>Layers</b>: switch maps and turn on the slope-hazard layer. <b>Conditions</b>: Mars clock, live weather, solar storms. <b>Explore</b>: every landing site and data-source status.' },
+    { sel: '#rightPanel', t: '5 · GO / NO-GO and simulation', b: 'The panel shows oxygen, battery, daylight, radiation, radio and a <b>GO / NO-GO</b> verdict. Press <b>▶ Simulate traverse</b> to watch the astronaut walk it, with live hazard warnings.', tab: 'plan' },
+    { sel: '#rightPanel', t: '6 · Radio coverage', b: 'A <span style="color:#b06cff">purple</span> glow and 📡 markers show where hills or crater walls block radio line-of-sight to the habitat mast. Set the mast height under <b>⚙ Suit, crew &amp; resources</b>; long blackouts make the EVA a NO-GO.', tab: 'plan' },
+    { sel: '#rightPanel', t: '7 · Fly it in 3D', b: 'Press <b>🧊 3D view</b> to walk or drive the route in 3D. Switch between <b>First-person</b>, <b>Chase</b> and <b>Orbit</b> cameras, drag to look around, and watch O₂, hazards and radio live.', tab: 'plan' },
+    { sel: '#btnMeasure', t: '8 · Measure distances', b: 'Press the <b>📏 ruler</b>, then click points on the map to get each leg, the total distance and the elevation. Press <b>Esc</b> or <b>Done</b> to finish.' },
+    { sel: '.tabs', t: '9 · More modes', b: '<b>Layers</b>: switch maps and turn on the slope-hazard layer. <b>Conditions</b>: Mars clock, live weather, solar storms. <b>Explore</b>: every landing site and data-source status.' },
     { sel: '#btnTour', t: 'That\'s it!', b: 'Press <b>?</b> anytime to see this tour again. Good luck, explorer.' },
   ];
   let k = 0;
@@ -964,13 +1015,25 @@ const Tour = (() => {
 // ---------------------------------------------------------------------
 function switchTab(id) { $('#rightPanel').classList.remove('collapsed'); $$('.tabs button[data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === id)); $$('.pane').forEach(p => p.classList.toggle('on', p.id === 'p-' + id)); }
 let hudT = 0;
+let hudPos = null;
+function hudUpdate() {
+  if (!hudPos) return;
+  const { lat, lng } = hudPos, h = elev(lat, lng);
+  $('#hudEl').textContent = isNaN(h) ? 'loading…' : fmt(h) + ' m';
+  if (isNaN(h)) {           // elevation tile not loaded yet: fetch it, then refresh the readout
+    const at = hudPos; dem.ensure(DEM.maxZ, lat - .05, lng - .05, lat + .05, lng + .05).then(() => { if (hudPos === at) hudUpdate(); });
+  }
+  const hab = Planner.state.hab;
+  if (hab) { const d = hav(hab, { lat, lon: lng }); $('#hudDist').textContent = d >= 1000 ? fmt(d / 1000, d < 10000 ? 2 : 1) + ' km' : fmt(d) + ' m'; $('#hudDistW').style.display = ''; }
+  else $('#hudDistW').style.display = 'none';
+}
 map.on('mousemove', e => {
   const { lat, lng } = e.latlng; $('#hudLL').textContent = fmtLL(lat, lng);
   const now = performance.now(); if (now - hudT < 60) return; hudT = now;
-  const h = elev(lat, lng); $('#hudEl').textContent = isNaN(h) ? '…' : fmt(h) + ' m';
-  if (isNaN(h)) dem.ensure(DEM.maxZ, lat - .05, lng - .05, lat + .05, lng + .05);
+  hudPos = { lat, lng }; hudUpdate();
   $('#hudLt').textContent = MarsTime.fmtH(MarsTime.ltst(MarsTime.at(new Date()), lng)) + ' LTST';
 });
+map.on('mouseout', () => { hudPos = null; });
 map.on('zoomend', () => { const mpp = 180 / (256 * 2 ** map.getZoom()) * D2R * R_MARS; $('#hudRes').textContent = mpp >= 1000 ? fmt(mpp / 1000, 1) + ' km/px' : mpp >= 1 ? fmt(mpp, 1) + ' m/px' : fmt(mpp * 100) + ' cm/px'; });
 
 window.addEventListener('DOMContentLoaded', () => {

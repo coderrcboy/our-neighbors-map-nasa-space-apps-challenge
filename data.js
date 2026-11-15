@@ -24,7 +24,7 @@ const BASEMAPS = [
   { id:'molahrsc', name:'MOLA + HRSC color hillshade', desc:'200 m/px · NASA laser altimeter blended with ESA Mars Express stereo', url:trek('Mars_MOLA_blend200ppx_HRSC_ClrShade_clon0dd_200mpp_lzw','jpg'), maxNative:8, attr:ATTR.trek+', '+ATTR.esa, tags:['esa'] },
   { id:'mola', name:'MOLA color hillshade', desc:'463 m/px · elevation-coloured relief', url:trek('Mars_MGS_MOLA_ClrShade_merge_global_463m','jpg'), maxNative:7, attr:ATTR.trek, tags:[] },
   { id:'ctx', name:'CTX global mosaic', desc:'5 m/px · 99.5% of the planet (Caltech Murray Lab)', url:arcgis('CTX'), arc:true, maxNative:13, attr:ATTR.murray, tags:['cal'] },
-  { id:'moc', name:'MOC atlas color', desc:'Mars Global Surveyor wide-angle', url:trek('msss_atlas_simp_clon','png'), maxNative:6, attr:ATTR.trek, tags:[] },
+  { id:'moc', name:'MOC atlas mosaic', desc:'Mars Global Surveyor wide-angle (greyscale)', url:trek('msss_atlas_simp_clon','png'), maxNative:6, attr:ATTR.trek, tags:[] },
 ];
 
 // ---------- Overlays (stackable) ----------

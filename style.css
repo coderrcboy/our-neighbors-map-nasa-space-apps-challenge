@@ -7,16 +7,11 @@
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:var(--sans);font-size:13px}
 button,select,input{font:inherit;color:inherit}
-#app{display:grid;grid-template-columns:360px 1fr;grid-template-rows:52px 1fr auto;height:100vh}
-header{grid-column:1/3;display:flex;align-items:center;gap:16px;padding:0 14px;border-bottom:1px solid var(--line);background:linear-gradient(90deg,#160c08,#0b0d10 40%)}
-.brand{display:flex;align-items:center;gap:10px;min-width:330px}
 .brand .dot{width:22px;height:22px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#ffb38a,#c1440e 55%,#5a1a06);box-shadow:0 0 14px #e0603a88}
 .brand h1{font-size:16px;margin:0;letter-spacing:.3px}
 .brand small{display:block;color:var(--muted);font-size:10.5px;letter-spacing:.6px;text-transform:uppercase}
-.hud{display:flex;gap:18px;font-family:var(--mono);font-size:11.5px;color:var(--muted);flex-wrap:nowrap;overflow:hidden}
 .hud b{color:var(--text);font-weight:500}
 .hud .k{color:var(--mars2)}
-aside{grid-row:2/4;background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
 .tabs{display:flex;border-bottom:1px solid var(--line)}
 .tabs button{flex:1;background:none;border:0;padding:11px 4px;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;font-size:12px;letter-spacing:.3px}
 .tabs button.on{color:var(--text);border-bottom-color:var(--mars)}
@@ -66,10 +61,6 @@ select,input:not([type]),input[type=text],input[type=number],input[type=datetime
 .checks li.ok:before{background:var(--ok)} .checks li.warn:before{background:var(--warn)} .checks li.bad:before{background:var(--bad)}
 .bar{height:6px;background:#0d1014;border-radius:3px;overflow:hidden;margin-top:3px}
 .bar i{display:block;height:100%;background:var(--ok)}
-#mapwrap{position:relative;min-height:0}
-#map{position:absolute;inset:0;background:#000}
-#profile{grid-column:2/3;border-top:1px solid var(--line);background:var(--panel);height:0;overflow:hidden;transition:height .25s}
-#profile.on{height:170px}
 #profile canvas{width:100%;height:170px;display:block}
 .leaflet-container{background:#050607;font-family:var(--sans)}
 .leaflet-control-attribution{background:rgba(10,12,15,.75)!important;color:#888!important;font-size:10px}
@@ -85,9 +76,6 @@ select,input:not([type]),input[type=text],input[type=number],input[type=datetime
 .pin.sci{background:var(--mars)}
 .pin.site{background:#ffd166;width:10px;height:10px;border-width:1.5px}
 .pinlbl{position:absolute;left:18px;top:-2px;white-space:nowrap;font:600 11px var(--sans);color:#fff;text-shadow:0 0 4px #000,0 0 8px #000}
-#toast{position:absolute;left:50%;top:14px;transform:translateX(-50%);background:#151a20ee;border:1px solid #333c47;padding:8px 14px;border-radius:8px;z-index:1000;display:none;font-size:12px;max-width:70%}
-#modeHint{position:absolute;left:12px;bottom:28px;z-index:900;background:#e0603aee;color:#fff;padding:7px 12px;border-radius:6px;font-weight:600;display:none}
-#legend{position:absolute;right:10px;bottom:24px;z-index:800;background:#111519e6;border:1px solid #2a313a;border-radius:8px;padding:8px 10px;font-size:11px;display:none}
 #legend .sw{display:inline-block;width:12px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
 .health{display:inline-block;width:8px;height:8px;border-radius:50%;background:#555;margin-right:6px}
 .health.ok{background:var(--ok)} .health.bad{background:var(--bad)} .health.wait{background:var(--warn)}
@@ -100,14 +88,103 @@ a{color:var(--mars2)}
 @media print{
   aside,header,#profile,#mapwrap{display:none!important}
 }
-@media (max-width:900px){
-  #app{grid-template-columns:1fr;grid-template-rows:52px 45vh 1fr auto}
-  aside{grid-row:3}
-  #profile{grid-row:4}
-  #mapwrap{grid-row:2}
-  #profile{grid-column:1}
-  .hud{display:none}
-}
+
 .pane{overflow-x:hidden}
 .grid2 .btn{white-space:normal}
 .row > input,.row > select{min-width:0}
+
+/* =================== v4 layout: full-screen map + floating panels (Google-Maps style) =================== */
+#app{position:fixed;inset:0;overflow:hidden}
+#mapwrap{position:absolute;inset:0}
+#map{position:absolute;inset:0;background:#000}
+.float{position:absolute;z-index:1000;background:rgba(18,22,27,.97);border:1px solid #2a323c;border-radius:14px;box-shadow:0 10px 30px #0009}
+#leftPanel{top:12px;left:12px;width:360px;max-height:calc(100vh - 24px);display:flex;flex-direction:column;padding:12px;overflow:hidden}
+.brand{display:flex;align-items:center;gap:10px}
+.brand > div:nth-child(2){flex:1}
+.iconbtn{width:28px;height:28px;border-radius:50%;border:1px solid #3a4450;background:#1f262f;color:var(--text);cursor:pointer;font-weight:700}
+.iconbtn:hover{border-color:var(--mars);color:var(--mars2)}
+.searchbox{display:flex;align-items:center;gap:8px;margin-top:10px;background:#0f1317;border:1px solid #2f3843;border-radius:24px;padding:3px 12px}
+.searchbox span{color:var(--muted);font-size:16px}
+.searchbox input{border:0!important;background:transparent!important;padding:8px 0!important;outline:none}
+.searchbox:focus-within{border-color:var(--mars)}
+#qres{overflow:auto;max-height:240px;margin-top:4px}
+#qres:empty{display:none}
+#placeCard{overflow:auto;min-height:0}
+#placeCard:empty{display:none}
+.place{margin-top:10px;border-top:1px solid var(--line);padding-top:10px}
+.place h2{margin:0;font-size:18px}
+.place .type{color:var(--mars2);font-size:11px;text-transform:uppercase;letter-spacing:1px}
+.place p{margin:6px 0;line-height:1.45;color:#cfc9c1}
+.place .start{width:100%;margin-top:8px;padding:10px;font-size:14px}
+.place .x{float:right;background:none;border:0;color:var(--muted);cursor:pointer;font-size:16px}
+#rightPanel{top:12px;right:12px;bottom:12px;width:370px;display:flex;flex-direction:column;overflow:hidden;transition:transform .25s}
+#rightPanel.collapsed{transform:translateX(calc(100% - 46px))}
+#rightPanel.collapsed .pane{visibility:hidden}
+.tabs{flex:0 0 auto}
+.tabs button i{display:block;font-style:normal;font-size:16px;margin-bottom:2px}
+.tabs button.collapse{flex:0 0 40px;font-size:18px;color:var(--muted)}
+#rightPanel.collapsed .tabs button.collapse{transform:rotate(180deg)}
+.hud{position:absolute;top:12px;left:50%;transform:translateX(-50%);display:flex;gap:16px;padding:7px 14px;border-radius:20px;font-family:var(--mono);font-size:11.5px;color:var(--muted);white-space:nowrap;z-index:900}
+.hud b{color:var(--text);font-weight:500}
+.hud .k{color:var(--mars2)}
+#profile{left:384px;right:394px;bottom:12px;height:0;overflow:hidden;opacity:0;transition:height .25s,opacity .25s;padding:0}
+#profile.on{height:170px;opacity:1}
+#profile canvas{border-radius:14px}
+#legend{right:394px;bottom:12px;padding:8px 10px;font-size:11px;display:none;border-radius:10px}
+body.profile-on #legend{bottom:194px}
+#toast{position:absolute;left:50%;top:56px;transform:translateX(-50%);background:#151a20f2;border:1px solid #333c47;padding:9px 16px;border-radius:10px;z-index:3000;display:none;font-size:12.5px;max-width:60%;box-shadow:0 8px 24px #000a}
+#modeHint{position:absolute;left:50%;bottom:24px;transform:translateX(-50%);z-index:1500;background:#e0603aee;color:#fff;padding:8px 16px;border-radius:20px;font-weight:600;display:none;box-shadow:0 6px 20px #0008}
+body.profile-on #modeHint{bottom:200px}
+.leaflet-right{right:384px!important}
+body.profile-on .leaflet-bottom.leaflet-right{bottom:182px}
+.leaflet-bottom.leaflet-left{left:384px}
+body.profile-on .leaflet-bottom.leaflet-left{bottom:182px}
+/* route hazard markers (blink during transit) */
+.hz{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-size:14px;font-weight:800;color:#111;border:2px solid #fff;box-shadow:0 0 0 3px #0007}
+.hz.sand{background:var(--warn);animation:blink 1s steps(2,start) infinite}
+.hz.danger{background:var(--bad);color:#fff;animation:blink .7s steps(2,start) infinite}
+@keyframes blink{to{opacity:.25}}
+.route-actions{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
+.route-legend{display:flex;gap:10px;flex-wrap:wrap;font-size:11px;color:var(--muted);margin-top:6px}
+.route-legend i{display:inline-block;width:14px;height:4px;border-radius:2px;vertical-align:middle;margin-right:4px}
+/* traverse simulation HUD */
+#simHud{left:50%;top:56px;transform:translateX(-50%);padding:10px 14px;display:none;width:min(520px,calc(100vw - 800px));min-width:340px;z-index:1600}
+.simrow{display:flex;gap:14px;font-family:var(--mono);font-size:12px;align-items:center;flex-wrap:wrap}
+.simrow b{color:#fff}
+.alert{margin-top:8px;padding:7px 10px;border-radius:8px;font-weight:700;font-size:12.5px}
+.alert.ok{background:#0f2a1f;color:var(--ok)}
+.alert.warn{background:#3a2c08;color:var(--warn);animation:pulse 1s infinite}
+.alert.bad{background:#3a0d0d;color:#ff6b6b;animation:pulse .6s infinite}
+@keyframes pulse{50%{opacity:.45}}
+.astro{width:22px;height:22px;border-radius:50%;background:#fff;border:3px solid var(--blue);box-shadow:0 0 14px var(--blue)}
+/* guided tour */
+#tour{position:fixed;inset:0;z-index:5000;display:none}
+#tour .shade{position:absolute;border-radius:12px;box-shadow:0 0 0 9999px rgba(0,0,0,.62);border:2px solid var(--mars);transition:all .3s;pointer-events:none}
+#tour .tip{position:absolute;width:320px;background:#151a20;border:1px solid var(--mars);border-radius:12px;padding:14px;box-shadow:0 10px 30px #000;transition:all .3s}
+#tour .tip h4{margin:0 0 6px;font-size:15px;color:var(--mars2)}
+#tour .tip p{margin:0 0 10px;line-height:1.5;color:#d8d2ca}
+#tour .tip .step{color:var(--muted);font-size:11px}
+/* phones / narrow screens */
+@media (max-width:900px){
+  #leftPanel{left:8px;right:8px;top:8px;width:auto;max-height:42vh;padding:10px}
+  .brand small{display:none}
+  #rightPanel{left:0;right:0;bottom:0;top:auto;width:auto;height:44vh;border-radius:14px 14px 0 0}
+  #rightPanel.collapsed{transform:translateY(calc(100% - 58px))}
+  .hud{display:none}
+  #profile{left:8px;right:8px;bottom:calc(44vh + 8px)}
+  #profile.on{height:120px} #profile canvas{height:120px}
+  #legend,body.profile-on #legend{right:8px;bottom:calc(44vh + 8px)}
+  .leaflet-right{right:0!important}
+  .leaflet-bottom.leaflet-left,.leaflet-bottom.leaflet-right{left:auto;bottom:44vh!important}
+  #simHud{width:auto;min-width:0;left:8px;right:8px;transform:none;top:auto;bottom:calc(44vh + 136px)}
+  #modeHint,body.profile-on #modeHint{bottom:calc(44vh + 12px)}
+  #tour .tip{width:auto;left:12px!important;right:12px}
+  #toast{max-width:90%}
+}
+
+/* Mars colour for greyscale CTX / HiRISE imagery at high zoom */
+.leaflet-pane.mars-tint{filter:sepia(1) saturate(2.3) hue-rotate(-22deg) brightness(.86) contrast(1.08)}
+#toast{top:104px}
+
+.kvin input[type=number]{padding:4px 6px}
+details summary::marker{color:var(--mars2)}

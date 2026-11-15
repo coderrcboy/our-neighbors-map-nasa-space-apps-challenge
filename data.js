@@ -126,3 +126,9 @@ const PRESETS = [
 
 // ---------- Fallback: latest Curiosity REMS report (CAB/NASA) if live fetch is blocked ----------
 const REMS_SNAPSHOT = { sol:'4995', terrestrial_date:'2026-08-25', ls:'341', min_temp:'-71', max_temp:'-5', pressure:'777', atmo_opacity:'Sunny', sunrise:'06:46', sunset:'18:51', local_uv_irradiance_index:'Moderate', min_gts_temp:'-84', max_gts_temp:'4' };
+
+// MOLA + Mars Express HRSC blended shaded relief, 200 m/px (ESA/DLR + NASA). Hillshade: sun at 45° altitude.
+// Its brightness tells how steep each 200 m pixel is, ~6x finer than the MOLA elevation grid, so small
+// craters, scarps and canyon walls show up. zf = vertical exaggeration used when the shading was made
+// (calibrated so flat plains read < 2° and canyon walls ~25-30°).
+const SHADE = { url: (z, y, x) => `${TREK}Mars_MOLA_blend200ppx_HRSC_Shade_clon0dd_200mpp_lzw/1.0.0/default/default028mm/${z}/${y}/${x}.jpg`, maxZ: 8, alt: 45, zf: 2 };

@@ -14,6 +14,16 @@ Option B is quick: double-click `index.html`. Everything works this way too (ver
 
 You need an internet connection because the map tiles stream from NASA, USGS and Caltech servers.
 
+## New in version 4
+- **Google-Maps-style layout:** full-screen map, search panel on the left, modes on the right (collapsible). On phones the modes become a bottom sheet.
+- **Search → base card → Start:** search any base, read what it is (elevation, ground, daylight), press **▶ Start mission here**.
+- **Hazard-coloured routes:** green = safe, yellow = look out (steep or loose sand), red = danger. Loose sand and danger spots blink; **↻ Reroute around danger** when red appears.
+- **▶ Simulate traverse:** watch the astronaut walk the route with live distance, mission clock, O₂/battery, sun angle and blinking hazard alerts.
+- **Guided tour** on first visit (press **?** to replay).
+- **Crater-aware routing:** besides MOLA elevation (463 m), routes now read the 200 m HRSC/MOLA shaded relief to measure local steepness, so small craters, scarps and canyon walls show yellow/red and the planner walks around them.
+- **Smooth continuous zoom** (mouse wheel / trackpad glide like Google Maps) and **Mars stays red at max zoom**: the greyscale CTX/HiRISE images get a natural Mars tint (toggle in Layers).
+- `design_sketch.jpg` is the hand-drawn layout these changes came from.
+
 ## What it does
 | | |
 |---|---|

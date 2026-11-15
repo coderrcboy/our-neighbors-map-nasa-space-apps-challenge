@@ -11,40 +11,51 @@
 </head>
 <body>
 <div id="app">
-  <header>
-    <div class="brand"><div class="dot"></div><div><h1>Our Neighbor's Map</h1><small>Interplanetary Survival Guide · Martian Map</small></div></div>
-    <div class="hud">
-      <span>⌖ <b id="hudLL">—</b></span>
-      <span>⛰ <b id="hudEl">—</b></span>
-      <span>☀ <b id="hudLt">—</b></span>
-      <span>🔍 <b id="hudRes">—</b></span>
-      <span class="k" id="hudLs">—</span>
-      <span class="k" id="hudMtc">—</span>
-    </div>
-  </header>
-  <aside>
+  <div id="mapwrap"><div id="map"></div></div>
+
+  <!-- LEFT: brand + search for a base (Google-Maps style) -->
+  <section id="leftPanel" class="float">
+    <div class="brand"><div class="dot"></div><div><h1>Our Neighbor's Map</h1><small>Interplanetary Survival Guide</small></div>
+      <button class="iconbtn" id="btnTour" title="How to use this map">?</button></div>
+    <div class="searchbox"><span>⌕</span><input type="text" id="q" placeholder="Search a base: Jezero, Olympus Mons, 18.4N 77.5E…" autocomplete="off"></div>
+    <div class="searchres" id="qres"></div>
+    <div id="placeCard"></div>
+  </section>
+
+  <!-- RIGHT: modes -->
+  <aside id="rightPanel" class="float">
     <div class="tabs">
-      <button data-tab="layers" class="on">Layers</button>
-      <button data-tab="plan">Plan EVA</button>
-      <button data-tab="cond">Conditions</button>
-      <button data-tab="explore">Explore</button>
+      <button data-tab="layers" class="on" title="Map layers"><i>◧</i>Layers</button>
+      <button data-tab="plan" title="Plan an EVA"><i>⛯</i>Plan EVA</button>
+      <button data-tab="cond" title="Conditions"><i>☀</i>Conditions</button>
+      <button data-tab="explore" title="Explore"><i>✦</i>Explore</button>
+      <button class="collapse" id="btnCollapse" title="Hide / show panel">⟩</button>
     </div>
     <div class="pane on" id="p-layers"></div>
     <div class="pane" id="p-plan"></div>
     <div class="pane" id="p-cond"></div>
     <div class="pane" id="p-explore"></div>
   </aside>
-  <div id="mapwrap">
-    <div id="map"></div>
-    <div id="toast"></div>
-    <div id="modeHint"></div>
-    <div id="legend"><b>Slope hazard</b><br>
-      <span class="sw" style="background:#3ccf8e"></span>&lt; 8° easy walking<br>
-      <span class="sw" style="background:#f2b636"></span>8–15° suited limit<br>
-      <span class="sw" style="background:#ff4d4d"></span>15–25° rover only<br>
-      <span class="sw" style="background:#be1e8c"></span>&gt; 25° impassable</div>
+
+  <div class="hud float" id="hud">
+    <span>⌖ <b id="hudLL">—</b></span>
+    <span>⛰ <b id="hudEl">—</b></span>
+    <span>☀ <b id="hudLt">—</b></span>
+    <span>🔍 <b id="hudRes">—</b></span>
+    <span class="k" id="hudLs">—</span>
+    <span class="k" id="hudMtc">—</span>
   </div>
-  <div id="profile"><canvas></canvas></div>
+
+  <div id="profile" class="float"><canvas></canvas></div>
+  <div id="simHud" class="float"></div>
+  <div id="toast"></div>
+  <div id="modeHint"></div>
+  <div id="legend" class="float"><b>Slope hazard</b><br>
+    <span class="sw" style="background:#3ccf8e"></span>&lt; 8° easy walking<br>
+    <span class="sw" style="background:#f2b636"></span>8–15° suited limit<br>
+    <span class="sw" style="background:#ff4d4d"></span>15–25° rover only<br>
+    <span class="sw" style="background:#be1e8c"></span>&gt; 25° impassable</div>
+  <div id="tour"></div>
 </div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script>

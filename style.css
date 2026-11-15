@@ -382,3 +382,5 @@ body.ui-simple.profile-on #plainHud{display:none}
   body.ui-simple.profile-on #simHud{bottom:calc(44vh + 226px)}
   body.ui-simple.profile-on #detailChip{bottom:calc(44vh + 230px)}
 }
+/* v8: phones, Simple mode — keep the map credits above the panel instead of behind the tab labels */
+@media (max-width:900px){ body.ui-simple .leaflet-bottom.leaflet-right{bottom:calc(44vh + 46px)!important} }

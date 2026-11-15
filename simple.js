@@ -172,8 +172,11 @@ const UI = (() => {
       add(e <= 75, e <= 75 ? `Rover battery is enough (${fmt(e)}% used)` : `Rover battery runs low (${fmt(e)}% used)`);
     }
     add(r.far <= P.walkback, r.far <= P.walkback ? `Never more than ${fmt(r.far / 1000, 1)} km from base` : `Goes ${fmt(r.far / 1000, 1)} km from base, past the ${fmt(P.walkback / 1000)} km ${m === 'eva' ? 'walk-home' : 'rescue'} limit`);
-    add(r.maxSl <= P.maxSlope, r.maxSl <= P.maxSlope ? `No ground too steep (steepest ${fmt(r.maxSl)}°)` : `Some ground is too steep (${fmt(r.maxSl)}°) — press Reroute`);
-    add(r.loose <= 0, r.loose <= 0 ? 'No soft sand on the way' : `Watch out: ${fmt(r.loose / 1000, 1)} km of soft sand`);
+    const satF = r.S.filter(q => q.sat).length / r.S.length, noTI = r.S.filter(q => q.noTI).length / r.S.length;
+    if (satF > 0) add(false, `Slopes unknown on ${fmt(satF * 100)}% of the route (above 7.6 km the elevation data tops out)`);
+    else add(r.maxSl <= P.maxSlope, r.maxSl <= P.maxSlope ? `No ground too steep (steepest ${fmt(r.maxSl)}°)` : `Some ground is too steep (${fmt(r.maxSl)}°) — press Reroute`);
+    if (r.loose <= 0 && noTI > 0.5) add(false, 'No ground-firmness data this far north/south (beyond 65°): soft sand can\'t be ruled out');
+    else add(r.loose <= 0, r.loose <= 0 ? 'No soft sand on the way' : `Watch out: ${fmt(r.loose / 1000, 1)} km of soft sand`);
     if (r.s0.el < 0) add(false, 'Leaves before sunrise — start later');
     else if (r.minEl < 0) add(false, 'Gets dark before you are back');
     else if (r.minEl < 5) add(false, 'Back only just before dusk');

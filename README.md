@@ -14,6 +14,13 @@ Option B is quick: double-click `index.html`. Everything works this way too (ver
 
 You need an internet connection because the map tiles stream from NASA, USGS and Caltech servers.
 
+## New in version 8 (second review round)
+- **No fake trench at 180° longitude:** the source elevation and shading tiles have bad pixels at the +180° edge (a fake 300–600 m drop and a fake 26° slope). Those columns are now ignored, so routes across 180° score correctly.
+- **A stalled terrain download can't freeze planning:** each terrain tile gives up after 15 s and is retried next time, instead of hanging until a reload.
+- **Missing data counts as unknown, not safe:** beyond ±65° (no THEMIS thermal data) the sand factor is lowered and says so, and above +7.6 km (where elevation data tops out) slopes count as unknown. Both show in the checklist and the plain-English reasons.
+- **Long routes stay fast:** each colour is drawn as one multi-segment line instead of one line per segment.
+- No thermal-tile requests beyond ±65° (removes the console errors near the poles). Settings that are blank or not a number keep the previous value. Search understands "18.4N77.5E" and "jezero lander", lists only real rovers for "rover", and says so when nothing matches. On phones the map credits no longer show through the tab labels.
+
 ## New in version 7 (fixes from an independent review)
 - **Security:** names from shared `#plan=` links are escaped everywhere (stop list, map pins, objectives, place card, mission brief), so a crafted link can't run code. Plan links are also fully validated (mode, coordinates, stops); a damaged link is ignored with a message instead of breaking the planner.
 - Stop minutes can't be negative (0–600, clamped).

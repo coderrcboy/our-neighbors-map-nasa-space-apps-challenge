@@ -23,13 +23,17 @@ function toast(msg, ms = 3500) { const t = $('#toast'); t.innerHTML = msg; t.sty
 //  Raster sampler: reads real pixel values from NASA Trek tiles (CORS *)
 // ---------------------------------------------------------------------
 class Raster {
-  constructor(urlFn, maxZ, minV = 0) { this.urlFn = urlFn; this.maxZ = maxZ; this.minV = minV; this.cache = new Map(); }
+  // opts.edgeDeg: ignore this many degrees of bad pixels at the east (+180°) edge of the source tiles (copy the last good column)
+  // opts.lat: the source only covers ±lat (THEMIS: ±65°), so nothing is requested beyond it
+  constructor(urlFn, maxZ, minV = 0, opts = {}) { this.urlFn = urlFn; this.maxZ = maxZ; this.minV = minV; this.cache = new Map(); this.edgeDeg = opts.edgeDeg || 0; this.latLim = opts.lat || 90; }
   _load(z, y, x) {
     const k = `${z}/${y}/${x}`;
     if (this.cache.has(k)) return this.cache.get(k);
     const p = (async () => {
       try {
-        const r = await fetch(this.urlFn(z, y, x), { mode: 'cors' });
+        // give up after 15 s so one stalled download can't freeze route planning; the failed tile is dropped from the cache and retried next time
+        const ac = new AbortController(), to = setTimeout(() => ac.abort(), 15000);
+        let r; try { r = await fetch(this.urlFn(z, y, x), { mode: 'cors', signal: ac.signal }); } finally { clearTimeout(to); }
         if (!r.ok) return null;
         const bmp = await createImageBitmap(await r.blob());
         const c = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(256, 256) : Object.assign(document.createElement('canvas'), { width: 256, height: 256 });
@@ -51,10 +55,11 @@ class Raster {
     for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) out.push([z, y, ((x % cols) + cols) % cols]);
     return out;
   }
-  async ensure(z, s, w, n, e) { await Promise.all(this.tilesFor(z, s, w, n, e).map(t => this._load(...t))); }
+  async ensure(z, s, w, n, e) { s = Math.max(s, -this.latLim); n = Math.min(n, this.latLim); if (s > n) return; await Promise.all(this.tilesFor(z, s, w, n, e).map(t => this._load(...t))); }
   _px(z, gx, gy) {
     const cols = 2 ** (z + 1) * 256, rows = 2 ** z * 256;
     gx = ((Math.round(gx) % cols) + cols) % cols; gy = clamp(Math.round(gy), 0, rows - 1);
+    if (this.edgeDeg) { const last = cols - 1 - Math.ceil(this.edgeDeg * this.ppd(z)); if (gx > last) gx = last; }   // bad strip at +180°
     const t = this.cache.get(`${z}/${gy >> 8}/${gx >> 8}`);
     if (!t || t instanceof Promise) return NaN;
     const v = t[(gy & 255) * 256 + (gx & 255)];
@@ -68,9 +73,9 @@ class Raster {
     return a * (1 - fx) * (1 - fy) + b * fx * (1 - fy) + c * (1 - fx) * fy + d * fx * fy;
   }
 }
-const dem = new Raster(DEM.url, DEM.maxZ);
-const themis = new Raster(THEMIS_N.url, THEMIS_N.maxZ);
-const shade = new Raster(SHADE.url, SHADE.maxZ, 1);
+const dem = new Raster(DEM.url, DEM.maxZ, 0, { edgeDeg: 0.045 });          // last 2 columns at +180° are wrong (fake 300–600 m trench)
+const themis = new Raster(THEMIS_N.url, THEMIS_N.maxZ, 0, { lat: 65 });     // THEMIS mosaic covers ±65° only
+const shade = new Raster(SHADE.url, SHADE.maxZ, 1, { edgeDeg: 0.08 });     // ~20 no-data columns at +180° (fake 26° slope)
 // steepness of one 200 m pixel from shaded-relief brightness (the minimum slope consistent with that shading)
 function shadeSlope(lat, lon, z = SHADE.maxZ) {
   const v = shade.val(z, lat, lon); if (isNaN(v)) return 0;
@@ -449,7 +454,7 @@ const Planner = (() => {
         if (li > 0 && k === 0) return;
         if (S.length) D += hav(S[S.length - 1], p);
         const t = themis.val(5, p.lat, p.lon);
-        S.push({ lat: p.lat, lon: p.lon, d: D, h: elev(p.lat, p.lon), leg: li, sat: demSat(p.lat, p.lon), loose: !isNaN(t) && t < 55 });
+        S.push({ lat: p.lat, lon: p.lon, d: D, h: elev(p.lat, p.lon), leg: li, sat: demSat(p.lat, p.lon), loose: !isNaN(t) && t < 55, noTI: isNaN(t) });
       }));
       if (S.filter(p => isNaN(p.h)).length > S.length * 0.2) { toast('⚠ Terrain data could not be loaded (offline or NASA Trek unreachable). Check your connection and try again.', 6000); return; }
       // along-track slope, smoothed over one DEM pixel
@@ -528,19 +533,27 @@ const Planner = (() => {
     // blinking hazard markers at the middle of each loose-sand / danger stretch
     const runs = (test) => { const out = []; let a = -1; for (let i = 1; i <= S.length; i++) { const on = i < S.length && test(S[i]); if (on && a < 0) a = i; if (!on && a >= 0) { out.push([a, i - 1]); a = -1; } } return out; };
     // radio blackout halo (no line-of-sight to the habitat mast)
-    for (let i = 1; i < S.length; i++) if (S[i].nolos && Math.abs(S[i].lon - S[i - 1].lon) <= 180) routeLay.addLayer(L.polyline([[S[i - 1].lat, S[i - 1].lon], [S[i].lat, S[i].lon]], { color: RADIO_COL, weight: 14, opacity: .45, interactive: false }));
+    { let h = []; const fl = () => { if (h.length > 1) routeLay.addLayer(L.polyline(h, { color: RADIO_COL, weight: 14, opacity: .45, interactive: false })); h = []; };
+      for (let i = 1; i < S.length; i++) { if (S[i].nolos && Math.abs(S[i].lon - S[i - 1].lon) <= 180) { if (!h.length) h.push([S[i - 1].lat, S[i - 1].lon]); h.push([S[i].lat, S[i].lon]); } else fl(); } fl(); }
     for (const [a, b] of runs(p => p.nolos)) { const m = S[(a + b) >> 1], km = (S[b].d - S[a - 1].d) / 1000, min = ((S[b].tc || 0) - (S[a - 1].tc || 0)) / 60;
       routeLay.addLayer(L.marker([m.lat, m.lon], { icon: L.divIcon({ className: '', html: '<div class="hz radio">📡</div>', iconSize: [26, 26], iconAnchor: [13, 13] }), zIndexOffset: 450 }).bindTooltip(`📡 Radio blackout · ${fmt(km, 2)} km · ~${fmt(min)} min without line-of-sight to the habitat mast`)); }
     for (const [a, b] of runs(p => p.loose)) { const m = S[(a + b) >> 1], km = (S[b].d - S[a - 1].d) / 1000;
       routeLay.addLayer(L.marker([m.lat, m.lon], { icon: L.divIcon({ className: '', html: '<div class="hz sand">!</div>', iconSize: [26, 26], iconAnchor: [13, 13] }), zIndexOffset: 500 }).bindTooltip(`⚠ Loose sand · ${fmt(km, 2)} km — slow down, test footing`)); }
     for (const [a, b] of runs(p => p.slope > P.maxSlope)) { const m = S[(a + b) >> 1];
       routeLay.addLayer(L.marker([m.lat, m.lon], { icon: L.divIcon({ className: '', html: '<div class="hz danger">⛔</div>', iconSize: [26, 26], iconAnchor: [13, 13] }), zIndexOffset: 600 }).bindTooltip(`⛔ Danger · slope ${fmt(Math.max(...S.slice(a, b + 1).map(p => p.slope)), 1)}° — use Reroute`)); }
+    // one line per run of the same colour (not one per segment): long routes stay fast to draw and pan
+    let under = [], run = null;
+    const flush = () => { if (run && run.pts.length > 1) routeLay.addLayer(L.polyline(run.pts, { color: run.c, weight: 4, opacity: .95, interactive: false, dashArray: run.dash ? '6 5' : null })); run = null; };
     for (let i = 1; i < S.length; i++) {
-      if (Math.abs(S[i].lon - S[i - 1].lon) > 180) continue;   // antimeridian seam
-      const c = HZ_COL[hazard(S[i], P)];
-      routeLay.addLayer(L.polyline([[S[i - 1].lat, S[i - 1].lon], [S[i].lat, S[i].lon]], { color: '#000', weight: 7, opacity: .45, interactive: false }));
-      routeLay.addLayer(L.polyline([[S[i - 1].lat, S[i - 1].lon], [S[i].lat, S[i].lon]], { color: c, weight: 4, opacity: .95, interactive: false, dashArray: S[i].loose ? '6 5' : null }));
+      const a = [S[i - 1].lat, S[i - 1].lon], b = [S[i].lat, S[i].lon];
+      if (Math.abs(S[i].lon - S[i - 1].lon) > 180) { flush(); if (under.length > 1) routeLay.addLayer(L.polyline(under, { color: '#000', weight: 7, opacity: .45, interactive: false })); under = []; continue; }   // antimeridian seam
+      if (!under.length) under.push(a); under.push(b);
+      const c = HZ_COL[hazard(S[i], P)], dash = !!S[i].loose;
+      if (!run || run.c !== c || run.dash !== dash) { flush(); run = { c, dash, pts: [a] }; }
+      run.pts.push(b);
     }
+    flush(); if (under.length > 1) routeLay.addLayer(L.polyline(under, { color: '#000', weight: 7, opacity: .45, interactive: false }));
+    routeLay.eachLayer(l => { if (l instanceof L.Polyline && l.options.color === '#000') l.bringToBack(); });
     const f = S[st.route.farIdx];
     routeLay.addLayer(L.circleMarker([f.lat, f.lon], { radius: 6, color: '#fff', weight: 2, fillColor: '#5bb4ff', fillOpacity: 1 }).bindTooltip(`Farthest point · ${fmt(st.route.far / 1000, 2)} km from habitat`));
     const fit = () => { map.invalidateSize({ pan: false }); map.fitBounds(L.latLngBounds(S.map(p => [p.lat, p.lon])).pad(0.1), mapPadding()); };
@@ -558,6 +571,7 @@ const Planner = (() => {
     if (r.subgrid) add('warn', `Some legs are shorter than the 200 m terrain grid — inspect HiRISE/CTX imagery for boulders`);
     if (r.S.some(p => p.sat)) add('warn', `Terrain above +7.6 km: DEM saturates, slopes there are under-estimated`);
     if (r.loose > 0) add('warn', `${fmt(r.loose / 1000, 2)} km over low thermal-inertia ground (likely loose dust/sand — dashed)`);
+    else if (r.S.filter(p => p.noTI).length > r.S.length / 2) add('warn', 'No ground-firmness data for most of the route (THEMIS covers ±65° only): soft sand cannot be ruled out');
     else add('ok', 'No loose-dust signature on route (THEMIS night IR)');
     // consumables
     if (st.mode === 'eva') {
@@ -723,7 +737,9 @@ const Planner = (() => {
       `<div class="row" style="margin-top:8px"><button class="btn sm" id="setReset">↺ Reset defaults</button><span class="note" style="margin:0">Edits re-run the route automatically.</span></div>`;
     $$('[data-set]').forEach(inp => inp.onchange = () => {
       const def = SETTINGS[st.mode].find(d => d[0] === inp.dataset.set), sc = def[6] || 1;
-      const v = clamp(+inp.value || def[3], def[3], def[4]); inp.value = v; P[def[0]] = v * sc;
+      const raw = inp.value.trim() === '' ? NaN : +inp.value;
+      if (!Number.isFinite(raw)) { inp.value = +(P[def[0]] / sc).toFixed(3); toast('Please type a number — kept the previous value.'); return; }   // blank / junk: keep the old value
+      const v = clamp(raw, def[3], def[4]); inp.value = v; P[def[0]] = v * sc;
       renderList(); if (st.route) { toast('Settings changed — recomputing route…'); compute(); }
     });
     $('#setReset').onclick = () => { Object.assign(PROFILES[st.mode], PROFILE_DEFAULTS[st.mode]); renderSettings(); renderList(); if (st.route) compute(); };
@@ -762,14 +778,16 @@ function survivability(r, P, mode) {
   add(mode === 'eva' ? 'Walk-back distance' : 'Rescue range', fr <= 1 ? 1 : 0.9 * Math.exp(-1.5 * (fr - 1)), `Farthest point ${fmt(r.far / 1000, 1)} km from base; limit ${fmt(P.walkback / 1000)} km${mode === 'eva' ? ' (how far a crew can walk home if the suit or rover fails)' : ''}.`);
   add('Slopes over the limit', Math.exp(-badL / 1500), badL > 0 ? `${fmt(badL / 1000, 2)} km steeper than ${P.maxSlope}° (each 1.5 km cuts the chance to about a third). Use Reroute.` : `No section steeper than ${P.maxSlope}°.`);
   add('Steep but allowed ground', Math.exp(-steepL / (mode === 'eva' ? 30000 : 60000)), `${fmt(steepL / 1000, 2)} km between ${fmt(P.maxSlope / 2)}° and ${P.maxSlope}° (fall / tip-over risk).`);
-  add('Loose sand / dust', Math.exp(-r.loose / 25000), `${fmt(r.loose / 1000, 2)} km over low thermal-inertia ground (THEMIS night IR).`);
+  const noTI = S.filter(p => p.noTI).length / S.length;          // share of the route with no thermal (sand) data
+  add('Loose sand / dust', Math.exp(-r.loose / 25000) * (1 - 0.1 * noTI), noTI > 0.05 ? `${fmt(r.loose / 1000, 2)} km of known loose ground; no ground-firmness data for ${fmt(noTI * 100)}% of the route (THEMIS covers ±65° only), so it counts as unknown, not safe.` : `${fmt(r.loose / 1000, 2)} km over low thermal-inertia ground (THEMIS night IR).`);
   const dk = mode === 'eva' ? 1 : 0.5;   // a pressurized rover has lights and heating: half the penalty
   add('Daylight', 1 - dk * (r.s0.el < 0 ? 0.3 : r.minEl < 0 ? 0.4 : r.minEl < 5 ? 0.15 : 0), r.s0.el < 0 ? 'Departs before sunrise.' : r.minEl < 0 ? 'Sun sets before the crew is back.' : r.minEl < 5 ? `Sun drops to ${fmt(r.minEl)}° (dusk).` : `Sun stays above ${fmt(r.minEl)}° (Mars24).`);
   const lm = r.radio ? r.radio.longest / 60 : 0;
   add('Radio contact with habitat', Math.exp(-lm / (mode === 'eva' ? 400 : 1200)), lm > 0 ? `Longest blackout about ${fmt(lm)} min (${fmt((1 - r.radio.frac) * 100)}% of the route out of line-of-sight of the ${r.mast} m mast).` : `Line-of-sight to the ${r.mast} m mast the whole way.`);
   add('Dust-storm season', MarsTime.dustSeason(r.T0.Ls) ? 0.97 : 1, `Ls ${fmt(r.T0.Ls)}°${MarsTime.dustSeason(r.T0.Ls) ? ': inside the main storm season' : ': outside the main storm season'}.`);
   add('Radiation', Math.exp(-r.dose / 100), `${fmt(r.dose, 3)} mSv for this sortie (MSL/RAD surface baseline, quiet sun).`);
-  if (r.relaxed || S.some(p => p.sat)) add('Terrain data confidence', (r.relaxed ? 0.9 : 1) * (S.some(p => p.sat) ? 0.95 : 1), r.relaxed ? 'No path existed under the slope limit, so it was relaxed.' : 'Terrain above +7.6 km: elevation data saturates.');
+  const satF = S.filter(p => p.sat).length / S.length;           // share of the route above the elevation-data ceiling (slopes unknown there)
+  if (r.relaxed || satF > 0) add('Terrain data confidence', (r.relaxed ? 0.9 : 1) * (1 - 0.3 * satF), [r.relaxed ? 'No path existed under the slope limit, so it was relaxed.' : '', satF > 0 ? `${fmt(satF * 100)}% of the route is above +7.6 km, where the elevation data tops out and slopes can't be measured (counted as unknown, not flat).` : ''].filter(Boolean).join(' '));
   F.sort((a, b) => a.p - b.p);
   return { pct: Math.round(100 * F.reduce((a, f) => a * f.p, 1)), factors: F };
 }
@@ -972,7 +990,9 @@ function initExplore() {
   const q = $('#q'), res = $('#qres');
   q.oninput = () => {
     const s = q.value.trim(); let out = [];
-    const m = s.match(/^(-?[\d.]+)\s*°?\s*([NS])?[\s,]+(-?[\d.]+)\s*°?\s*([EW])?$/i);
+    let m = s.match(/^(-?\d+(?:\.\d+)?)\s*°?\s*([NS])?([\s,]*)(-?\d+(?:\.\d+)?)\s*°?\s*([EW])?$/i);
+    if (m && !m[2] && !/\d\s*°?[\s,]+-?\d/.test(s)) m = null;          // "18.4N77.5E" and "10 250" are fine, "1234" is not a coordinate
+    if (m) m = [m[0], m[1], m[2], m[4], m[5]];
     let note = '';
     if (m) {
       let la = +m[1], lo = +m[3]; if (/s/i.test(m[2] || '')) la = -la; if (/w/i.test(m[4] || '')) lo = -lo;
@@ -983,9 +1003,10 @@ function initExplore() {
     if (s.length > 1) {
       const words = s.toLowerCase().split(/\s+/).filter(Boolean);     // every word must match the name or its type ("gale crater")
       const hit = str => words.every(w => str.toLowerCase().includes(w));
-      out = out.concat(SITES.filter(x => hit(x.n + ' landing site lander rover')).map(x => [x.n, 'Landing site', x.lat, x.lon, x.d]));
+      out = out.concat(SITES.filter(x => hit(x.n + ' landing site lander ' + (/Sojourner|Spirit|Opportunity|Curiosity|Perseverance|Zhurong/i.test(x.n) ? 'rover ' : '') + x.d)).map(x => [x.n, 'Landing site', x.lat, x.lon, x.d]));
       out = out.concat(GAZ.filter(g => hit(g[0] + ' ' + g[1])).slice(0, 12));
     }
+    if (!note && !out.length && s.length > 1) note = 'No matches. Try a place name (Gale, Olympus Mons) or coordinates like 18.4N 77.5E.';
     res.innerHTML = (note ? `<div class="muted small" style="padding:6px">${note}</div>` : '') + out.map((g, i) => `<div data-i="${i}"><b>${esc(g[0])}</b> <small>${esc(g[1])} ${g[1] ? '·' : ''} ${fmtLL(g[2], g[3])}</small></div>`).join('');
     $$('#qres [data-i]').forEach(d => d.onclick = () => {
       const g = out[+d.dataset.i];
